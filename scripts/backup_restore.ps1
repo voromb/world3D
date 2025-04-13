@@ -1,150 +1,222 @@
-# Script interactivo para backup y restauración de base de datos PostgreSQL para Windows
+# Script de Gestión de Base de Datos World3D
+# Ejecutar como administrador
+
+# Colores para la consola
+$Green = [System.ConsoleColor]::Green
+$Blue = [System.ConsoleColor]::Blue
+$Red = [System.ConsoleColor]::Red
+$Yellow = [System.ConsoleColor]::Yellow
 
 # Crear directorio de backups si no existe
-if (-not (Test-Path -Path ".\bd")) {
-  New-Item -ItemType Directory -Path ".\bd" | Out-Null
+$BackupDir = ".\bd"
+if (!(Test-Path -Path $BackupDir)) {
+    New-Item -ItemType Directory -Force -Path $BackupDir
 }
 
-# Verificar que Docker esté ejecutándose
-try {
-  $null = docker ps
-} catch {
-  Write-Host "Error: Docker no parece estar ejecutándose. Inicia Docker Desktop e intenta nuevamente." -ForegroundColor Red
-  exit 1
+# Función para mostrar mensaje con color
+function Write-ColorOutput {
+    param(
+        [string]$Message, 
+        [System.ConsoleColor]$Color
+    )
+    Write-Host $Message -ForegroundColor $Color
 }
 
-# Verificar que el contenedor esté en ejecución
-$containerRunning = docker ps -f "name=World3D-db" --format "{{.Names}}"
-if (-not $containerRunning) {
-  Write-Host "Error: El contenedor 'World3D-db' no está en ejecución. Inicia el contenedor con 'docker-compose up -d'" -ForegroundColor Red
-  exit 1
+# Verificar Docker
+function Test-DockerRunning {
+    try {
+        $dockerInfo = docker info
+        return $true
+    }
+    catch {
+        Write-ColorOutput "Error: Docker no parece estar ejecutándose. Inicia Docker e intenta nuevamente." $Red
+        return $false
+    }
 }
 
-Clear-Host
-Write-Host "==================================================" -ForegroundColor Blue
-Write-Host "      GESTOR DE BASE DE DATOS PARA WORLD3D        " -ForegroundColor Blue
-Write-Host "==================================================" -ForegroundColor Blue
-Write-Host ""
-Write-Host "Por favor, seleccione una opción:"
-Write-Host "1. Crear copia de seguridad" -ForegroundColor Green
-Write-Host "2. Restaurar copia de seguridad" -ForegroundColor Green
-Write-Host "3. Salir" -ForegroundColor Red
-Write-Host ""
+# Verificar contenedor
+function Test-ContainerRunning {
+    $containerRunning = docker ps | Select-String "World3D-db"
+    if (!$containerRunning) {
+        Write-ColorOutput "Error: El contenedor 'World3D-db' no está en ejecución. Inicia el contenedor con 'docker-compose up -d'" $Red
+        return $false
+    }
+    return $true
+}
 
-$option = Read-Host "Opción [1-3]"
+# Función para crear backup
+function Create-Backup {
+    Write-Host "`n" -NoNewline
+    Write-ColorOutput "Creando copia de seguridad..." $Blue
+    
+    # Nombre del archivo con timestamp
+    $Timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $Filename = "world3d_$Timestamp.dump"
+    $FullPath = Join-Path $BackupDir $Filename
+    
+    try {
+        # Ejecutar backup en formato personalizado
+        docker exec World3D-db pg_dump -U admin -Fc World3D > $FullPath
+        
+        if (Test-Path $FullPath -PathType Leaf) {
+            Write-ColorOutput "✓ Copia de seguridad creada correctamente en:" $Green
+            Write-ColorOutput "  $FullPath" $Green
+            
+            # Crear archivo de sincronización
+            $CurrentPath = Join-Path $BackupDir "world3d_current.dump"
+            Copy-Item $FullPath $CurrentPath -Force
+            Write-ColorOutput "✓ También se ha actualizado el archivo de sincronización:" $Green
+            Write-ColorOutput "  $CurrentPath" $Green
+        }
+        else {
+            throw "Archivo de backup no creado"
+        }
+    }
+    catch {
+        Write-ColorOutput "✗ Error al crear la copia de seguridad" $Red
+        Write-ColorOutput "Verifica que la base de datos 'World3D' exista y el usuario 'admin' tenga acceso." $Yellow
+    }
+}
 
-if ($option -eq "1") {
-  # Crear backup
-  Write-Host ""
-  Write-Host "Creando copia de seguridad..." -ForegroundColor Blue
-  
-  # Nombre del archivo con timestamp
-  $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-  $FILENAME = "world3d_$timestamp.sql"
-  
-  try {
-      # Ejecutar el backup
-      docker exec World3D-db pg_dump -U admin World3D > ".\bd\$FILENAME"
-      
-      if (Test-Path ".\bd\$FILENAME") {
-          $fileSize = (Get-Item ".\bd\$FILENAME").Length
-          if ($fileSize -gt 0) {
-              Write-Host "✓ Copia de seguridad creada correctamente en:" -ForegroundColor Green
-              Write-Host "  .\bd\$FILENAME" -ForegroundColor Green
-              
-              # Crear también un archivo con nombre fijo para sincronización
-              Copy-Item ".\bd\$FILENAME" ".\bd\world3d_current.sql" -Force
-              Write-Host "✓ También se ha actualizado el archivo de sincronización:" -ForegroundColor Green
-              Write-Host "  .\bd\world3d_current.sql" -ForegroundColor Green
-          } else {
-              Write-Host "⚠️ El archivo de backup está vacío. Es posible que haya ocurrido un error." -ForegroundColor Yellow
-          }
-      } else {
-          Write-Host "✗ No se pudo crear el archivo de backup" -ForegroundColor Red
-      }
-  }
-  catch {
-      Write-Host "✗ Error al crear la copia de seguridad: $_" -ForegroundColor Red
-  }
+# Función para restaurar backup
+function Restore-Backup {
+    Write-Host "`n" -NoNewline
+    Write-ColorOutput "Copias de seguridad disponibles:" $Blue
+    
+    # Obtener archivos de backup
+    $BackupFiles = Get-ChildItem $BackupDir -Filter *.dump
+    
+    if ($BackupFiles.Count -eq 0) {
+        Write-ColorOutput "No se encontraron copias de seguridad en la carpeta $BackupDir" $Red
+        return
+    }
+    
+    # Mostrar lista de backups
+    for ($i = 0; $i -lt $BackupFiles.Count; $i++) {
+        $File = $BackupFiles[$i]
+        $FileSize = "{0:N2} MB" -f ($File.Length / 1MB)
+        Write-Host "$($i+1). $($File.Name) ($FileSize)"
+    }
+    
+    # Seleccionar archivo
+    Write-Host ""
+    $Selection = Read-Host "Seleccione el número de la copia a restaurar [1-$($BackupFiles.Count)]"
+    
+    # Validar selección
+    try {
+        $SelectedIndex = [int]$Selection - 1
+        if ($SelectedIndex -lt 0 -or $SelectedIndex -ge $BackupFiles.Count) {
+            throw "Selección inválida"
+        }
+        
+        $SelectedFile = $BackupFiles[$SelectedIndex]
+    }
+    catch {
+        Write-ColorOutput "Opción inválida" $Red
+        return
+    }
+    
+    # Confirmación
+    Write-ColorOutput "Restaurando desde: $($SelectedFile.Name)" $Blue
+    Write-ColorOutput "ADVERTENCIA: Esto sobrescribirá la base de datos actual. Los datos existentes se perderán." $Red
+    Write-ColorOutput "Este proceso detendrá y reiniciará el contenedor de la base de datos." $Yellow
+    
+    $Confirm = Read-Host "¿Está seguro de continuar? [s/N]"
+    if ($Confirm.ToLower() -ne 's') {
+        Write-ColorOutput "Operación cancelada" $Blue
+        return
+    }
+    
+    # Proceso de restauración
+    try {
+        # 1. Detener el contenedor
+        Write-ColorOutput "Deteniendo el contenedor de base de datos..." $Yellow
+        docker-compose stop db
+        
+        # 2. Eliminar el contenedor
+        Write-ColorOutput "Eliminando el contenedor de base de datos..." $Yellow
+        docker-compose rm -f db
+        
+        # 3. Iniciar nuevo contenedor
+        Write-ColorOutput "Iniciando nuevo contenedor de base de datos..." $Yellow
+        docker-compose up -d
+        
+        # 4. Esperar a que la base de datos esté lista
+        Write-ColorOutput "Esperando a que la base de datos esté lista..." $Yellow
+        Start-Sleep -Seconds 10
+        
+        # 5. Copiar archivo de backup al contenedor
+        $ContainerBackupPath = "/tmp/$($SelectedFile.Name)"
+        docker cp $SelectedFile.FullName World3D-db:$ContainerBackupPath
+        
+        # 6. Restaurar backup
+        Write-ColorOutput "Restaurando datos desde el archivo seleccionado..." $Blue
+        docker exec -i World3D-db dropdb -U admin World3D
+        docker exec -i World3D-db createdb -U admin World3D
+        docker exec -i World3D-db pg_restore -U admin -d World3D $ContainerBackupPath
+        
+        Write-ColorOutput "✓ Base de datos restaurada correctamente" $Green
+    }
+    catch {
+        Write-ColorOutput "✗ Error al restaurar la base de datos" $Red
+        Write-ColorOutput "Es posible que el archivo de backup esté corrupto o sea incompatible." $Yellow
+        Write-Host $_.Exception.Message
+    }
 }
-elseif ($option -eq "2") {
-  # Restaurar backup
-  Write-Host ""
-  Write-Host "Copias de seguridad disponibles:" -ForegroundColor Blue
-  
-  try {
-      # Listar archivos disponibles
-      $FILES = Get-ChildItem ".\bd\*.sql" -ErrorAction Stop
-      if ($FILES.Count -eq 0) {
-          Write-Host "No se encontraron copias de seguridad en la carpeta .\bd\" -ForegroundColor Red
-          exit 1
-      }
-      
-      # Mostrar lista numerada
-      for ($i = 0; $i -lt $FILES.Count; $i++) {
-          # Mostrar tamaño del archivo
-          $fileSize = [math]::Round(($FILES[$i].Length / 1KB), 2)
-          Write-Host "$($i+1). $($FILES[$i].Name) ($fileSize KB)" 
-      }
-      
-      # Seleccionar archivo
-      Write-Host ""
-      $file_num = Read-Host "Seleccione el número de la copia a restaurar [1-$($FILES.Count)]"
-      
-      # Validar entrada
-      if (-not ($file_num -match "^\d+$") -or [int]$file_num -lt 1 -or [int]$file_num -gt $FILES.Count) {
-          Write-Host "Opción inválida" -ForegroundColor Red
-          exit 1
-      }
-      
-      # Obtener archivo seleccionado
-      $SELECTED_FILE = $FILES[[int]$file_num-1].FullName
-      
-      Write-Host "Restaurando desde: $($FILES[[int]$file_num-1].Name)" -ForegroundColor Blue
-      Write-Host "ADVERTENCIA: Esto sobrescribirá la base de datos actual. Los datos existentes se perderán." -ForegroundColor Red
-      $confirm = Read-Host "¿Está seguro de continuar? [s/N]"
-      
-      if ($confirm -ne "s" -and $confirm -ne "S") {
-          Write-Host "Operación cancelada" -ForegroundColor Blue
-          exit 0
-      }
-      
-      # Realizar un backup antes de restaurar
-      $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-      $BACKUP_FILENAME = "world3d_before_restore_$timestamp.sql"
-      Write-Host "Creando copia de seguridad de la base de datos actual antes de restaurar..." -ForegroundColor Yellow
-      docker exec World3D-db pg_dump -U admin World3D > ".\bd\$BACKUP_FILENAME"
-      
-      if (Test-Path ".\bd\$BACKUP_FILENAME") {
-          $fileSize = (Get-Item ".\bd\$BACKUP_FILENAME").Length
-          if ($fileSize -gt 0) {
-              Write-Host "✓ Backup previo creado en: .\bd\$BACKUP_FILENAME" -ForegroundColor Green
-          } else {
-              Write-Host "⚠️ El backup previo está vacío o ha fallado" -ForegroundColor Yellow
-          }
-      }
-      
-      # Preparar la base de datos para restauración limpia
-      Write-Host "Preparando base de datos para restauración limpia..." -ForegroundColor Blue
-      # Desconectar usuarios y eliminar base de datos
-      docker exec -i World3D-db psql -U admin postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'World3D';"
-      docker exec -i World3D-db psql -U admin postgres -c "DROP DATABASE IF EXISTS World3D;"
-      docker exec -i World3D-db psql -U admin postgres -c "CREATE DATABASE World3D;"
-      
-      # Ejecutar restauración
-      Write-Host "Restaurando base de datos..." -ForegroundColor Blue
-      type $SELECTED_FILE | docker exec -i World3D-db psql -U admin World3D
-      Write-Host "✓ Base de datos restaurada correctamente" -ForegroundColor Green
-  }
-  catch {
-      Write-Host "✗ Error: $_" -ForegroundColor Red
-  }
+
+# Menú principal
+function Show-Menu {
+    Clear-Host
+    Write-Host "==================================================" -ForegroundColor $Blue
+    Write-Host "      GESTOR DE BASE DE DATOS PARA WORLD3D        " -ForegroundColor $Blue
+    Write-Host "==================================================" -ForegroundColor $Blue
+    Write-Host ""
+    Write-Host "Por favor, seleccione una opción:" -NoNewline
+    Write-Host " [Usar teclas de flecha y Enter]" -ForegroundColor DarkGray
+    Write-Host "1. " -NoNewline
+    Write-Host "Crear copia de seguridad" -ForegroundColor $Green
+    Write-Host "2. " -NoNewline
+    Write-Host "Restaurar copia de seguridad (reinicia el contenedor)" -ForegroundColor $Green
+    Write-Host "3. " -NoNewline
+    Write-Host "Salir" -ForegroundColor $Red
 }
-elseif ($option -eq "3") {
-  Write-Host "Saliendo..." -ForegroundColor Blue
-  exit 0
+
+# Bucle principal
+do {
+    # Verificaciones previas
+    if (!(Test-DockerRunning)) {
+        Read-Host "Presione Enter para salir"
+        exit
+    }
+    
+    if (!(Test-ContainerRunning)) {
+        Read-Host "Presione Enter para salir"
+        exit
+    }
+
+    # Mostrar menú
+    Show-Menu
+    
+    # Entrada de usuario
+    $Selection = Read-Host "Opción [1-3]"
+    
+    # Procesar selección
+    switch ($Selection) {
+        '1' { Create-Backup }
+        '2' { Restore-Backup }
+        '3' { 
+            Write-ColorOutput "Saliendo..." $Blue
+            exit 
+        }
+        default { 
+            Write-ColorOutput "Opción inválida" $Red
+            Start-Sleep -Seconds 2
+        }
+    }
+    
+    # Pausar para ver resultados
+    if ($Selection -ne '3') {
+        Read-Host "Presione Enter para continuar"
+    }
 }
-else {
-  Write-Host "Opción inválida" -ForegroundColor Red
-  exit 1
-}
+while ($true)
