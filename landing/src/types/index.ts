@@ -154,6 +154,8 @@ export type FilterType = {
   search?: string;
   sort?: string;
   page?: number;
+  // Campo para especificar qué relaciones se deben poblar (populate)
+  populateFields?: string[];
 };
 
 // Tipo para rango de precios

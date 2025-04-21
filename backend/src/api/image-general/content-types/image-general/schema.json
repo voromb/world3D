@@ -1,0 +1,39 @@
+{
+  "kind": "collectionType",
+  "collectionName": "image_generals",
+  "info": {
+    "singularName": "image-general",
+    "pluralName": "image-generals",
+    "displayName": "imageGeneral",
+    "description": ""
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "attributes": {
+    "imageGeneralName": {
+      "type": "string"
+    },
+    "slug": {
+      "type": "uid",
+      "targetField": "imageGeneralName"
+    },
+    "nameGeneralImage": {
+      "type": "media",
+      "multiple": true,
+      "required": false,
+      "allowedTypes": [
+        "images",
+        "files",
+        "videos",
+        "audios"
+      ]
+    },
+    "textGeneral": {
+      "type": "blocks"
+    },
+    "links": {
+      "type": "blocks"
+    }
+  }
+}

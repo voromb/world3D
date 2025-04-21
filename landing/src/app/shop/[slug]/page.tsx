@@ -1,38 +1,44 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { ProductType } from '@/types';
-import ProductGrid from '@/components/ui/product/ProductGrid';
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { ProductType } from "@/types";
+import ProductGrid from "@/components/ui/product/ProductGrid";
+
+// Función auxiliar para generar URLs de imágenes completas
+const getImageUrl = (imagePath: string): string => {
+  if (!imagePath) return "/placeholder.jpg";
+  if (imagePath.startsWith("http")) return imagePath;
+  return `${process.env.NEXT_PUBLIC_BACKEND_URL}${imagePath}`;
+};
 
 export default function ProductDetailPage() {
   const params = useParams();
   const slug = params?.slug as string;
-  
+
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<ProductType | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<ProductType[]>([]);
   const [selectedImage, setSelectedImage] = useState(0);
-  
+
   useEffect(() => {
     const fetchProductData = async () => {
       if (!slug) return;
-      
+
       setLoading(true);
-      
+
       try {
         // Obtener producto
         const productResponse = await fetch(`/api/products/${slug}`);
-        
+
         if (!productResponse.ok) {
-          throw new Error('Product not found');
+          throw new Error("Product not found");
         }
-        
+
         const productData = await productResponse.json();
         setProduct(productData);
-        
+
         // Obtener productos relacionados si hay categoría
         if (productData?.categories?.[0]) {
           const categorySlug = productData.categories[0].slug;
@@ -42,18 +48,18 @@ export default function ProductDetailPage() {
           const relatedData = await relatedResponse.json();
           setRelatedProducts(relatedData.data || []);
         }
-        
+
         setLoading(false);
       } catch (error) {
-        console.error('Error fetching product:', error);
+        console.error("Error fetching product:", error);
         setProduct(null);
         setLoading(false);
       }
     };
-    
+
     fetchProductData();
   }, [slug]);
-  
+
   // Loading state
   if (loading) {
     return (
@@ -61,7 +67,7 @@ export default function ProductDetailPage() {
         <div className="animate-pulse">
           <div className="h-8 bg-gray-200 rounded mb-4 w-1/3"></div>
           <div className="h-4 bg-gray-200 rounded w-1/4 mb-8"></div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="h-96 bg-gray-200 rounded-lg"></div>
             <div>
@@ -77,16 +83,18 @@ export default function ProductDetailPage() {
       </div>
     );
   }
-  
+
   // Error state - producto no encontrado
   if (!product) {
     return (
       <div className="container mx-auto px-4 py-16">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Producto no encontrado</h1>
-          <p className="mb-8">El producto que estás buscando no existe o ha sido eliminado.</p>
-          <Link 
-            href="/shop" 
+          <p className="mb-8">
+            El producto que estás buscando no existe o ha sido eliminado.
+          </p>
+          <Link
+            href="/shop"
             className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors inline-block"
           >
             Volver a la tienda
@@ -95,7 +103,7 @@ export default function ProductDetailPage() {
       </div>
     );
   }
-  
+
   return (
     <main className="bg-gray-50 py-8">
       <div className="container mx-auto px-4">
@@ -116,8 +124,8 @@ export default function ProductDetailPage() {
             {product.categories?.[0] && (
               <li className="flex items-center space-x-2">
                 <span className="text-gray-400">/</span>
-                <Link 
-                  href={`/shop?category=${product.categories[0].slug}`} 
+                <Link
+                  href={`/shop?category=${product.categories[0].slug}`}
                   className="text-gray-500 hover:text-blue-600"
                 >
                   {product.categories[0].categoryName}
@@ -126,7 +134,9 @@ export default function ProductDetailPage() {
             )}
             <li className="flex items-center space-x-2">
               <span className="text-gray-400">/</span>
-              <span className="text-gray-700 font-medium truncate max-w-[200px]">{product.productName}</span>
+              <span className="text-gray-700 font-medium truncate max-w-[200px]">
+                {product.productName}
+              </span>
             </li>
           </ol>
         </nav>
@@ -139,11 +149,16 @@ export default function ProductDetailPage() {
               {product.images && product.images.length > 0 ? (
                 <>
                   <div className="relative h-80 md:h-96 mb-4 bg-white rounded-lg overflow-hidden border">
-                    <Image
-                      src={product.images[selectedImage].url}
+                    <img
+                      src={getImageUrl(product.images[selectedImage].url)}
                       alt={product.productName}
-                      fill
-                      className="object-contain"
+                      className="absolute inset-0 w-full h-full object-contain"
+                      onError={(e) => {
+                        console.error(
+                          `Error loading image: ${product.images[selectedImage].url}`
+                        );
+                        e.currentTarget.src = "/placeholder.jpg";
+                      }}
                     />
                   </div>
                   {product.images.length > 1 && (
@@ -153,14 +168,20 @@ export default function ProductDetailPage() {
                           key={image.id}
                           onClick={() => setSelectedImage(index)}
                           className={`relative h-16 bg-white rounded-md overflow-hidden border-2 ${
-                            selectedImage === index ? 'border-blue-600' : 'border-gray-200'
+                            selectedImage === index
+                              ? "border-blue-600"
+                              : "border-gray-200"
                           }`}
                         >
-                          <Image
-                            src={image.formats?.thumbnail?.url || image.url}
+                          <img
+                            src={getImageUrl(
+                              image.formats?.thumbnail?.url || image.url
+                            )}
                             alt={`${product.productName} - Imagen ${index + 1}`}
-                            fill
-                            className="object-cover"
+                            className="absolute inset-0 w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = "/placeholder.jpg";
+                            }}
                           />
                         </button>
                       ))}
@@ -169,7 +190,9 @@ export default function ProductDetailPage() {
                 </>
               ) : (
                 <div className="h-80 bg-gray-200 rounded-lg flex items-center justify-center">
-                  <span className="text-gray-400">Sin imágenes disponibles</span>
+                  <span className="text-gray-400">
+                    Sin imágenes disponibles
+                  </span>
                 </div>
               )}
             </div>
@@ -177,67 +200,114 @@ export default function ProductDetailPage() {
             {/* Información del producto */}
             <div>
               <h1 className="text-3xl font-bold mb-2">{product.productName}</h1>
-              
+
               <div className="flex items-center mb-4">
                 {product.brands?.[0] && (
                   <span className="text-gray-600 mr-4">
-                    Marca: <span className="font-semibold">{product.brands[0].brandName}</span>
+                    Marca:{" "}
+                    <span className="font-semibold">
+                      {product.brands[0].brandName}
+                    </span>
                   </span>
                 )}
                 <span className="text-gray-600">
-                  Estado: <span className="font-semibold">{product.state || 'Usado'}</span>
+                  Estado:{" "}
+                  <span className="font-semibold">
+                    {product.state || "Usado"}
+                  </span>
                 </span>
               </div>
-              
+
               <div className="text-3xl font-bold text-blue-600 mb-6">
                 {product.price}€
               </div>
-              
+
               <div className="bg-gray-50 rounded-lg p-4 mb-6">
                 <h3 className="font-semibold mb-2">Ubicación</h3>
                 <p className="flex items-center text-gray-700">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-gray-500">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="mr-2 text-gray-500"
+                  >
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
                     <circle cx="12" cy="10" r="3"></circle>
                   </svg>
-                  {product.cityName}, {product.provinceName}, {product.countryName}
+                  {product.cityName}, {product.provinceName},{" "}
+                  {product.countryName}
                 </p>
               </div>
-              
+
               <div className="mb-6">
                 <h3 className="font-semibold mb-2">Descripción</h3>
                 <div className="text-gray-700 prose max-w-none">
                   {product.description}
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-gray-500 mb-1">Peso</h4>
-                  <p className="text-gray-900">{product.weight ? `${product.weight} kg` : 'No especificado'}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-gray-500 mb-1">Dimensiones</h4>
-                  <p className="text-gray-900">{product.dimensions || 'No especificado'}</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-gray-500 mb-1">Fecha de fabricación</h4>
+                  <h4 className="text-sm font-medium text-gray-500 mb-1">
+                    Peso
+                  </h4>
                   <p className="text-gray-900">
-                    {product.dateManufactured ? new Date(product.dateManufactured).toLocaleDateString() : 'No especificado'}
+                    {product.weight
+                      ? `${product.weight} kg`
+                      : "No especificado"}
                   </p>
                 </div>
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="text-sm font-medium text-gray-500 mb-1">Garantía restante</h4>
-                  <p className="text-gray-900">{product.remainingWarranty || 'No especificado'}</p>
+                  <h4 className="text-sm font-medium text-gray-500 mb-1">
+                    Dimensiones
+                  </h4>
+                  <p className="text-gray-900">
+                    {product.dimensions || "No especificado"}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-sm font-medium text-gray-500 mb-1">
+                    Fecha de fabricación
+                  </h4>
+                  <p className="text-gray-900">
+                    {product.dateManufactured
+                      ? new Date(product.dateManufactured).toLocaleDateString()
+                      : "No especificado"}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-sm font-medium text-gray-500 mb-1">
+                    Garantía restante
+                  </h4>
+                  <p className="text-gray-900">
+                    {product.remainingWarranty || "No especificado"}
+                  </p>
                 </div>
               </div>
-              
+
               <div className="space-y-4">
                 <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors">
                   Contactar con el vendedor
                 </button>
                 <button className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="mr-2"
+                  >
                     <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z"></path>
                   </svg>
                   Añadir a favoritos
@@ -257,7 +327,7 @@ export default function ProductDetailPage() {
               Envío
             </button>
           </div>
-          
+
           <div>
             <table className="w-full text-left">
               <tbody>
@@ -275,7 +345,9 @@ export default function ProductDetailPage() {
                 )}
                 {product.dimensions && (
                   <tr className="border-b border-gray-100">
-                    <th className="py-3 text-gray-500 pr-4 w-1/3">Dimensiones</th>
+                    <th className="py-3 text-gray-500 pr-4 w-1/3">
+                      Dimensiones
+                    </th>
                     <td className="py-3">{product.dimensions}</td>
                   </tr>
                 )}
@@ -287,8 +359,12 @@ export default function ProductDetailPage() {
                 )}
                 {product.dateManufactured && (
                   <tr className="border-b border-gray-100">
-                    <th className="py-3 text-gray-500 pr-4 w-1/3">Fecha de fabricación</th>
-                    <td className="py-3">{new Date(product.dateManufactured).toLocaleDateString()}</td>
+                    <th className="py-3 text-gray-500 pr-4 w-1/3">
+                      Fecha de fabricación
+                    </th>
+                    <td className="py-3">
+                      {new Date(product.dateManufactured).toLocaleDateString()}
+                    </td>
                   </tr>
                 )}
               </tbody>

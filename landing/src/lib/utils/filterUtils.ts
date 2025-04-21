@@ -1,9 +1,17 @@
 import { FilterType } from '@/types';
 
 /**
- * Construye una URL para la API de Strapi con los filtros proporcionados
+ * Construye una URL para la API de Strapi con los filtros proporcionados y los campos a poblar
+ * @param baseUrl - URL base de la API
+ * @param filters - Objeto con los filtros a aplicar
+ * @param populateFields - Array de campos a poblar (populate) en la respuesta
+ * @returns URL completa para hacer la petición a la API
  */
-export function buildFilterUrl(baseUrl: string, filters: FilterType): string {
+export function buildFilterUrl(
+  baseUrl: string, 
+  filters: FilterType, 
+  populateFields: string[] = ['images', 'categories', 'brands']
+): string {
   const url = new URL(baseUrl);
   
   // Añadir paginación
@@ -56,6 +64,17 @@ export function buildFilterUrl(baseUrl: string, filters: FilterType): string {
     // Ordenación por defecto
     url.searchParams.append('sort', 'createdAt:desc');
   }
+  
+  // IMPORTANTE: Añadir los campos a poblar (populate) especificados
+  // Esto permite que cada llamada decida qué relaciones necesita incluir
+  populateFields.forEach(field => {
+    url.searchParams.append('populate', field);
+  });
+  
+  // Log para depuración
+  console.log(`[API] Campos poblados: ${populateFields.join(', ')}`);
+  console.log(`[API] URL completa: ${url.toString()}`);
+  
   
   return url.toString();
 }

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script interactivo para backup y restauración de base de datos PostgreSQL
+# Script interactivo para backup y restauración de base de datos PostgreSQL en formato .sql
 
 # Colores para el menú
 GREEN='\033[0;32m'
@@ -29,10 +29,10 @@ crear_backup() {
     echo -e "${BLUE}Creando copia de seguridad...${NC}"
     
     # Nombre del archivo con timestamp
-    FILENAME="world3d_$(date +%Y%m%d_%H%M%S).dump"
+    FILENAME="world3d_$(date +%Y%m%d_%H%M%S).sql"
     
-    # Ejecutar el backup en formato personalizado
-    docker exec World3D-db pg_dump -U admin -Fc World3D > ./bd/$FILENAME
+    # Ejecutar el backup en formato SQL plano
+    docker exec World3D-db pg_dump -U admin World3D > ./bd/$FILENAME
     
     # Verificar resultado
     if [ $? -eq 0 ] && [ -s "./bd/$FILENAME" ]; then
@@ -40,9 +40,9 @@ crear_backup() {
         echo -e "${GREEN}  ./bd/$FILENAME${NC}"
         
         # Crear también un archivo con nombre fijo para sincronización
-        cp ./bd/$FILENAME ./bd/world3d_current.dump
+        cp ./bd/$FILENAME ./bd/world3d_current.sql
         echo -e "${GREEN}✓ También se ha actualizado el archivo de sincronización:${NC}"
-        echo -e "${GREEN}  ./bd/world3d_current.dump${NC}"
+        echo -e "${GREEN}  ./bd/world3d_current.sql${NC}"
     else
         echo -e "${RED}✗ Error al crear la copia de seguridad${NC}"
         echo -e "${YELLOW}Verifica que la base de datos 'World3D' exista y el usuario 'admin' tenga acceso.${NC}"
@@ -55,7 +55,7 @@ restaurar_backup() {
     echo -e "${BLUE}Copias de seguridad disponibles:${NC}"
     
     # Listar archivos disponibles
-    FILES=(./bd/*.dump)
+    FILES=(./bd/*.sql)
     if [ ${#FILES[@]} -eq 0 ] || [ ! -f ${FILES[0]} ]; then
         echo -e "${RED}No se encontraron copias de seguridad en la carpeta ./bd/${NC}"
         exit 1
@@ -91,36 +91,34 @@ restaurar_backup() {
         exit 0
     fi
     
-    # Método de restauración robusto
     # 1. Detener el contenedor
     echo -e "${YELLOW}Deteniendo el contenedor de base de datos...${NC}"
     docker-compose stop db
-    
-    # 2. Eliminar el contenedor (para recrearlo después)
+
+    # 2. Eliminar el contenedor
     echo -e "${YELLOW}Eliminando el contenedor de base de datos...${NC}"
     docker-compose rm -f db
-    
+
     # 3. Iniciar nuevo contenedor
     echo -e "${YELLOW}Iniciando nuevo contenedor de base de datos...${NC}"
     docker-compose up -d
-    
+
     # 4. Esperar a que la base de datos esté lista
     echo -e "${YELLOW}Esperando a que la base de datos esté lista...${NC}"
     sleep 10
-    
-    # 5. Restaurar el backup con pg_restore
+
+    # 5. Restaurar la base de datos
     echo -e "${BLUE}Restaurando datos desde el archivo seleccionado...${NC}"
     docker exec -i World3D-db dropdb -U admin World3D
     docker exec -i World3D-db createdb -U admin World3D
-    docker exec -i World3D-db pg_restore -U admin -d World3D /tmp/$(basename $SELECTED_FILE)
-    docker cp $SELECTED_FILE World3D-db:/tmp/
+    cat $SELECTED_FILE | docker exec -i World3D-db psql -U admin -d World3D
     
     # Verificar resultado
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ Base de datos restaurada correctamente${NC}"
     else
         echo -e "${RED}✗ Error al restaurar la base de datos${NC}"
-        echo -e "${YELLOW}Es posible que el archivo de backup esté corrupto o sea incompatible.${NC}"
+        echo -e "${YELLOW}Es posible que el archivo de backup esté corrupto o tenga errores sintácticos.${NC}"
     fi
 }
 
