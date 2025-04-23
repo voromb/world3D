@@ -48,12 +48,6 @@
       "target": "api::category.category",
       "inversedBy": "products"
     },
-    "brands": {
-      "type": "relation",
-      "relation": "oneToMany",
-      "target": "api::brand.brand",
-      "mappedBy": "product"
-    },
     "weight": {
       "type": "decimal"
     },
@@ -97,6 +91,12 @@
       "relation": "manyToMany",
       "target": "api::shipping-type.shipping-type",
       "inversedBy": "products"
+    },
+    "brands": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::brand.brand",
+      "mappedBy": "products"
     }
   }
 }
