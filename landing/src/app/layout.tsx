@@ -7,6 +7,7 @@ import Footer from "@/components/footer";
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 import { Providers } from "@/components/providers"; // Importamos el Provider de Apollo
+import 'leaflet/dist/leaflet.css';
 
 const urbanist = Urbanist({
   subsets: ["latin"],

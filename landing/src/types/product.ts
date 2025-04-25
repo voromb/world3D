@@ -1,3 +1,5 @@
+//src/types/product.ts
+
 // Tipo para un producto individual
 export type ProductType = {
   id: number;

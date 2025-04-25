@@ -1,7 +1,5 @@
 //src/app/shop/page.tsx
 
-//src/app/shop/page.tsx
-
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -9,11 +7,17 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { CategoryType, FilterType, ProductType } from '@/types';
 import { queryStringToFilters } from '@/lib/utils/filterUtils';
+import dynamic from 'next/dynamic';
 
 // Componentes
 import ProductGrid from '@/components/ui/product/ProductGrid';
 import CollapsibleFilterBar from '@/components/ui/filter/CollapsibleFilterBar';
 
+// Importación dinámica del componente de mapa para evitar problemas con SSR
+const ProductMap = dynamic(() => import('@/components/ui/map/ProductMap'), {
+  ssr: false,
+  loading: () => <div className="w-full h-[800px] bg-gray-100 flex items-center justify-center">Cargando mapa...</div>
+});
 
 // Interfaz para extender ProductType con metadatos
 interface ProductWithMeta extends ProductType {
@@ -292,80 +296,86 @@ export default function ShopPage() {
             initialFilters={filters}
           />
         </div>
-        
-        {/* Espacio para utilidades adicionales */}
-        <div className="mb-8">
-          {/* Aquí puedes añadir tus utilidades adicionales */}
+
+        {/* Contenedor principal con mapa y productos */}
+        <div className="flex flex-col md:flex-row gap-6">
+          {/* Mapa en el lado izquierdo - Aumentado a 800px de altura para que llegue a la segunda card */}
+          <div className="w-full md:w-1/3 md:sticky md:top-24 h-[800px] rounded-lg overflow-hidden shadow-md">
+            <ProductMap products={products} height="800px" />
+          </div>
+          
+          {/* Lista de productos en el lado derecho */}
+          <div className="w-full md:w-2/3">
+            {/* Barra de resultados */}
+            {!initialLoad && products.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-col sm:flex-row justify-between items-center">
+                <div>
+                  Mostrando{' '}
+                  <span className="font-medium">{products.length}</span>{' '}
+                  de{' '}
+                  <span className="font-medium">
+                    {totalItems}
+                  </span>{' '}
+                  resultados
+                </div>
+              </div>
+            )}
+            
+            {/* Lista de productos */}
+            <ProductGrid 
+              products={products} 
+              loading={loading} 
+              emptyMessage={
+                filters.brand 
+                  ? `No se encontraron productos de la marca ${currentBrand || filters.brand}. Intenta con otros filtros o ver todos los productos.` 
+                  : "No se encontraron productos que coincidan con tus filtros. Intenta con otros filtros o ver todos los productos."
+              }
+            />
+            
+            {/* Paginación */}
+            {totalPages > 1 && !loading && (
+              <div className="mt-8 flex justify-center">
+                <nav className="flex items-center space-x-2">
+                  <PageButton
+                    onClick={() => {
+                      const newParams = new URLSearchParams(searchParams.toString());
+                      newParams.set('page', (currentPage - 1).toString());
+                      window.location.href = `/shop?${newParams.toString()}`;
+                    }}
+                    disabled={currentPage === 1}
+                  >
+                    Anterior
+                  </PageButton>
+                  
+                  {Array.from({ length: totalPages }, (_, i) => (
+                    <PageButton
+                      key={i}
+                      onClick={() => {
+                        const newParams = new URLSearchParams(searchParams.toString());
+                        newParams.set('page', (i + 1).toString());
+                        window.location.href = `/shop?${newParams.toString()}`;
+                      }}
+                      active={currentPage === i + 1}
+                    >
+                      {i + 1}
+                    </PageButton>
+                  ))}
+                  
+                  <PageButton
+                    onClick={() => {
+                      const newParams = new URLSearchParams(searchParams.toString());
+                      newParams.set('page', (currentPage + 1).toString());
+                      window.location.href = `/shop?${newParams.toString()}`;
+                    }}
+                    disabled={currentPage === totalPages}
+                  >
+                    Siguiente
+                  </PageButton>
+                </nav>
+              </div>
+            )}
+          </div>
         </div>
-        
-        {/* Barra de resultados */}
-        {!initialLoad && products.length > 0 && (
-          <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-col sm:flex-row justify-between items-center">
-            <div>
-              Mostrando{' '}
-              <span className="font-medium">{products.length}</span>{' '}
-              de{' '}
-              <span className="font-medium">
-                {totalItems}
-              </span>{' '}
-              resultados
-            </div>
-          </div>
-        )}
-        
-        {/* Lista de productos */}
-        <ProductGrid 
-          products={products} 
-          loading={loading} 
-          emptyMessage={
-            filters.brand 
-              ? `No se encontraron productos de la marca ${currentBrand || filters.brand}. Intenta con otros filtros o ver todos los productos.` 
-              : "No se encontraron productos que coincidan con tus filtros. Intenta con otros filtros o ver todos los productos."
-          }
-        />
-        
-        {/* Paginación */}
-        {totalPages > 1 && !loading && (
-          <div className="mt-8 flex justify-center">
-            <nav className="flex items-center space-x-2">
-              <PageButton
-                onClick={() => {
-                  const newParams = new URLSearchParams(searchParams.toString());
-                  newParams.set('page', (currentPage - 1).toString());
-                  window.location.href = `/shop?${newParams.toString()}`;
-                }}
-                disabled={currentPage === 1}
-              >
-                Anterior
-              </PageButton>
-              
-              {Array.from({ length: totalPages }, (_, i) => (
-                <PageButton
-                  key={i}
-                  onClick={() => {
-                    const newParams = new URLSearchParams(searchParams.toString());
-                    newParams.set('page', (i + 1).toString());
-                    window.location.href = `/shop?${newParams.toString()}`;
-                  }}
-                  active={currentPage === i + 1}
-                >
-                  {i + 1}
-                </PageButton>
-              ))}
-              
-              <PageButton
-                onClick={() => {
-                  const newParams = new URLSearchParams(searchParams.toString());
-                  newParams.set('page', (currentPage + 1).toString());
-                  window.location.href = `/shop?${newParams.toString()}`;
-                }}
-                disabled={currentPage === totalPages}
-              >
-                Siguiente
-              </PageButton>
-            </nav>
-          </div>
-        )}
       </div>
     </main>
   );

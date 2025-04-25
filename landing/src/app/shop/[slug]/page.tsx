@@ -5,6 +5,17 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ProductType } from "@/types";
 import ProductGrid from "@/components/ui/product/ProductGrid";
+import dynamic from "next/dynamic";
+
+// Importación dinámica del componente de mapa para evitar problemas con SSR
+const ProductMap = dynamic(() => import("@/components/ui/map/ProductMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-96 bg-gray-100 flex items-center justify-center">
+      Cargando mapa...
+    </div>
+  ),
+});
 
 // Función auxiliar para generar URLs de imágenes completas
 const getImageUrl = (imagePath: string): string => {
@@ -20,15 +31,26 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<ProductType | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<ProductType[]>([]);
+  const [essentialProducts, setEssentialProducts] = useState<ProductType[]>([]);
   const [selectedImage, setSelectedImage] = useState(0);
+  const [essentialsPage, setEssentialsPage] = useState(1);
+  const [relatedPage, setRelatedPage] = useState(1);
+  const [totalEssentialsPages, setTotalEssentialsPages] = useState(1);
+  const [totalRelatedPages, setTotalRelatedPages] = useState(1);
+  const [loadingEssentials, setLoadingEssentials] = useState(true);
+  const [loadingRelated, setLoadingRelated] = useState(true);
+  const [productType, setProductType] = useState(""); // Para depuración
+  const PRODUCTS_PER_PAGE = 6; // 6 productos por página
 
   useEffect(() => {
     const fetchProductData = async () => {
       if (!slug) return;
 
-      setLoading(true);
-
       try {
+        setLoading(true);
+        setLoadingEssentials(true);
+        setLoadingRelated(true);
+
         // Obtener producto
         const productResponse = await fetch(`/api/products/${slug}`);
 
@@ -39,26 +61,372 @@ export default function ProductDetailPage() {
         const productData = await productResponse.json();
         setProduct(productData);
 
-        // Obtener productos relacionados si hay categoría
-        if (productData?.categories?.[0]) {
-          const categorySlug = productData.categories[0].slug;
-          const relatedResponse = await fetch(
-            `/api/products?category=${categorySlug}&exclude=${productData.id}&limit=4`
-          );
-          const relatedData = await relatedResponse.json();
-          setRelatedProducts(relatedData.data || []);
-        }
+        // Determinar tipo de producto para debugging
+        determineProductType(productData);
+
+        // Cargar los productos relacionados y esenciales en paralelo
+        await Promise.all([
+          loadRelatedProducts(productData, 1), // Forzar página 1 en carga inicial
+          loadEssentialProducts(productData, 1) // Forzar página 1 en carga inicial
+        ]);
 
         setLoading(false);
       } catch (error) {
         console.error("Error fetching product:", error);
         setProduct(null);
         setLoading(false);
+        setLoadingEssentials(false);
+        setLoadingRelated(false);
       }
     };
 
     fetchProductData();
   }, [slug]);
+
+  // Función para determinar el tipo de producto para debugging
+  const determineProductType = (currentProduct: ProductType) => {
+    if (isFilamentPrinter(currentProduct)) {
+      setProductType("impresora-filamento");
+    } else if (isResinPrinter(currentProduct)) {
+      setProductType("impresora-resina");
+    } else if (isFilament(currentProduct)) {
+      setProductType("filamento");
+    } else if (isResin(currentProduct)) {
+      setProductType("resina");
+    } else if (isElectronica(currentProduct)) {
+      setProductType("electronica");
+    } else if (isPerfileria(currentProduct)) {
+      setProductType("perfileria");
+    } else {
+      setProductType("otro");
+    }
+  };
+
+  // FUNCIÓN para cargar productos relacionados
+  const loadRelatedProducts = async (currentProduct: ProductType, pageNumber: number) => {
+    if (!currentProduct?.categories?.[0]) {
+      setRelatedProducts([]);
+      setLoadingRelated(false);
+      return;
+    }
+    
+    try {
+      setLoadingRelated(true);
+      const categorySlug = currentProduct.categories[0].slug;
+      
+      console.log(`[LOG] Cargando productos relacionados, página ${pageNumber}, categoría ${categorySlug}`);
+      
+      // Solicitar TODOS los productos para poder calcular correctamente las páginas totales
+      const response = await fetch(
+        `/api/products?category=${categorySlug}&exclude=${currentProduct.id}&limit=100`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Error al obtener productos relacionados: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Verificar que tenemos datos válidos
+      if (data && Array.isArray(data.data)) {
+        console.log(`[LOG] Productos relacionados recibidos: ${data.data.length}`);
+        
+        // Si no hay productos, no hacer nada
+        if (data.data.length === 0) {
+          setRelatedProducts([]);
+          setTotalRelatedPages(1);
+          setRelatedPage(1);
+          setLoadingRelated(false);
+          return;
+        }
+        
+        // Actualizar estado con TODOS los productos
+        setRelatedProducts(data.data);
+        
+        // Calcular cuántas páginas REALES hay (basado en productos disponibles)
+        const realPageCount = Math.ceil(data.data.length / PRODUCTS_PER_PAGE);
+        console.log(`[LOG] Páginas reales relacionados: ${realPageCount}`);
+        
+        // Si la página solicitada es mayor que las páginas reales, ajustar a la última página
+        if (pageNumber > realPageCount) {
+          setRelatedPage(realPageCount);
+        } else {
+          setRelatedPage(pageNumber);
+        }
+        
+        setTotalRelatedPages(realPageCount);
+      } else {
+        console.warn("[WARN] No se recibieron datos válidos para productos relacionados");
+        setRelatedProducts([]);
+        setTotalRelatedPages(1);
+        setRelatedPage(1);
+      }
+    } catch (error) {
+      console.error("[ERROR] Error al cargar productos relacionados:", error);
+      setRelatedProducts([]);
+      setTotalRelatedPages(1);
+      setRelatedPage(1);
+    } finally {
+      setLoadingRelated(false);
+    }
+  };
+
+  // FUNCIÓN para cargar productos esenciales
+  const loadEssentialProducts = async (currentProduct: ProductType, pageNumber: number) => {
+    try {
+      setLoadingEssentials(true);
+      
+      // Determinar qué categoría buscar
+      let categoryToFetch = "";
+      
+      if (isFilamentPrinter(currentProduct)) {
+        categoryToFetch = "filamento";
+      } else if (isResinPrinter(currentProduct)) {
+        categoryToFetch = "resina";
+      } else if (isFilament(currentProduct)) {
+        categoryToFetch = "impresora-filamento";
+      } else if (isResin(currentProduct)) {
+        categoryToFetch = "impresora-resina";
+      } else if (isElectronica(currentProduct)) {
+        categoryToFetch = "perfileria";
+      } else if (isPerfileria(currentProduct)) {
+        categoryToFetch = "electronica";
+      }
+      
+      // Si no se determinó una categoría específica, usar productos destacados
+      if (!categoryToFetch) {
+        await loadFeaturedProducts(currentProduct, pageNumber);
+        return;
+      }
+      
+      console.log(`[LOG] Cargando productos esenciales, página ${pageNumber}, categoría ${categoryToFetch}`);
+      
+      // Solicitar TODOS los productos para poder calcular correctamente las páginas totales
+      const response = await fetch(
+        `/api/products?category=${categoryToFetch}&exclude=${currentProduct.id}&limit=100`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Error al obtener productos esenciales: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Verificar que tenemos datos válidos
+      if (data && Array.isArray(data.data)) {
+        console.log(`[LOG] Productos esenciales recibidos: ${data.data.length}`);
+        
+        // Si no hay productos, no hacer nada
+        if (data.data.length === 0) {
+          setEssentialProducts([]);
+          setTotalEssentialsPages(1);
+          setEssentialsPage(1);
+          setLoadingEssentials(false);
+          return;
+        }
+        
+        // Actualizar estado con TODOS los productos
+        setEssentialProducts(data.data);
+        
+        // Calcular cuántas páginas REALES hay (basado en productos disponibles)
+        const realPageCount = Math.ceil(data.data.length / PRODUCTS_PER_PAGE);
+        console.log(`[LOG] Páginas reales esenciales: ${realPageCount}`);
+        
+        // Si la página solicitada es mayor que las páginas reales, ajustar a la última página
+        if (pageNumber > realPageCount) {
+          setEssentialsPage(realPageCount);
+        } else {
+          setEssentialsPage(pageNumber);
+        }
+        
+        setTotalEssentialsPages(realPageCount);
+      } else {
+        console.warn("[WARN] No se recibieron datos válidos para productos esenciales");
+        setEssentialProducts([]);
+        setTotalEssentialsPages(1);
+        setEssentialsPage(1);
+      }
+    } catch (error) {
+      console.error("[ERROR] Error al cargar productos esenciales:", error);
+      setEssentialProducts([]);
+      setTotalEssentialsPages(1);
+      setEssentialsPage(1);
+    } finally {
+      setLoadingEssentials(false);
+    }
+  };
+
+  // Función para cargar productos destacados
+  const loadFeaturedProducts = async (currentProduct: ProductType, pageNumber: number) => {
+    try {
+      console.log(`[LOG] Cargando productos destacados, página ${pageNumber}`);
+      
+      // Solicitar TODOS los productos destacados
+      const response = await fetch(
+        `/api/products?isFeatured=true&exclude=${currentProduct.id}&limit=100`
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Error al obtener productos destacados: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data && Array.isArray(data.data)) {
+        console.log(`[LOG] Productos destacados recibidos: ${data.data.length}`);
+        
+        // Si no hay productos, no hacer nada
+        if (data.data.length === 0) {
+          setEssentialProducts([]);
+          setTotalEssentialsPages(1);
+          setEssentialsPage(1);
+          setLoadingEssentials(false);
+          return;
+        }
+        
+        // Actualizar estado con TODOS los productos
+        setEssentialProducts(data.data);
+        
+        // Calcular cuántas páginas REALES hay (basado en productos disponibles)
+        const realPageCount = Math.ceil(data.data.length / PRODUCTS_PER_PAGE);
+        console.log(`[LOG] Páginas reales destacados: ${realPageCount}`);
+        
+        // Si la página solicitada es mayor que las páginas reales, ajustar a la última página
+        if (pageNumber > realPageCount) {
+          setEssentialsPage(realPageCount);
+        } else {
+          setEssentialsPage(pageNumber);
+        }
+        
+        setTotalEssentialsPages(realPageCount);
+      } else {
+        console.warn("[WARN] No se recibieron datos válidos para productos destacados");
+        setEssentialProducts([]);
+        setTotalEssentialsPages(1);
+        setEssentialsPage(1);
+      }
+    } catch (error) {
+      console.error("[ERROR] Error al cargar productos destacados:", error);
+      setEssentialProducts([]);
+      setTotalEssentialsPages(1);
+      setEssentialsPage(1);
+    } finally {
+      setLoadingEssentials(false);
+    }
+  };
+
+  // Funciones simplificadas para cambiar página
+  const handleEssentialsPageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalEssentialsPages || loadingEssentials) return;
+    setEssentialsPage(newPage);
+  };
+
+  const handleRelatedPageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalRelatedPages || loadingRelated) return;
+    setRelatedPage(newPage);
+  };
+
+  // Funciones auxiliares para determinar el tipo de producto
+  const isFilamentPrinter = (product: ProductType): boolean => {
+    return hasCategory(product, 'impresora-filamento') || 
+           hasCategory(product, 'fdm') || 
+           hasKeywords(product, ['impresora fdm', 'impresora filamento', 'impresora fff']);
+  };
+
+  const isResinPrinter = (product: ProductType): boolean => {
+    return hasCategory(product, 'impresora-resina') || 
+           hasCategory(product, 'sla') || 
+           hasCategory(product, 'dlp') || 
+           hasKeywords(product, ['impresora resina', 'impresora sla', 'impresora dlp', 'impresora lcd']);
+  };
+
+  const isFilament = (product: ProductType): boolean => {
+    return hasCategory(product, 'filamento') || 
+           hasKeywords(product, ['filamento', 'pla', 'abs', 'petg', 'tpu', 'nylon']);
+  };
+
+  const isResin = (product: ProductType): boolean => {
+    return hasCategory(product, 'resina') || 
+           hasKeywords(product, ['resina', 'resin', 'fotopolímero']);
+  };
+
+  const isElectronica = (product: ProductType): boolean => {
+    return hasCategory(product, 'electronica') ||
+           hasKeywords(product, ['electrónica', 'placa', 'arduino', 'raspberry']);
+  };
+  
+  const isPerfileria = (product: ProductType): boolean => {
+    return hasCategory(product, 'perfileria') ||
+           hasKeywords(product, ['perfil', 'perfilería', 'aluminio']);
+  };
+
+  const hasCategory = (product: ProductType, categorySlug: string): boolean => {
+    if (!product.categories) return false;
+    
+    return product.categories.some(cat => 
+      cat.slug != null && (
+        cat.slug === categorySlug || 
+        cat.slug.includes(categorySlug) ||
+        (cat.categoryName && cat.categoryName.toLowerCase().includes(categorySlug.toLowerCase()))
+      )
+    );
+  };
+
+  const hasKeywords = (product: ProductType, keywords: string[]): boolean => {
+    if (!product.productName) return false;
+    
+    const name = product.productName.toLowerCase();
+    const description = product.description?.toLowerCase() || '';
+    return keywords.some(keyword => name.includes(keyword) || description.includes(keyword));
+  };
+
+  // Función para obtener un subconjunto de productos para la página actual
+  const getPageProducts = (products: ProductType[], page: number): ProductType[] => {
+    // Si no hay productos o el array es inválido, devolver array vacío
+    if (!products || !Array.isArray(products) || products.length === 0) {
+      return [];
+    }
+    
+    // Calcular índices de inicio y fin para la página actual
+    const startIndex = (page - 1) * PRODUCTS_PER_PAGE;
+    const endIndex = startIndex + PRODUCTS_PER_PAGE;
+    
+    // Si el índice de inicio es mayor que la longitud del array, devolver los primeros 6
+    if (startIndex >= products.length) {
+      return products.slice(0, Math.min(PRODUCTS_PER_PAGE, products.length));
+    }
+    
+    // Devolver los productos de la página actual
+    return products.slice(startIndex, endIndex);
+  };
+
+  // Obtener los productos para la página actual
+  const currentEssentialProducts = getPageProducts(essentialProducts, essentialsPage);
+  const currentRelatedProducts = getPageProducts(relatedProducts, relatedPage);
+
+  // Determinar qué tipo de título mostrar para la sección de imprescindibles
+  const getEssentialsTitle = () => {
+    // Si el producto es null, devolver un título genérico
+    if (!product) {
+      return "Productos imprescindibles";
+    }
+    
+    if (isFilamentPrinter(product)) {
+      return "Filamentos imprescindibles";
+    } else if (isResinPrinter(product)) {
+      return "Resinas imprescindibles";
+    } else if (isFilament(product)) {
+      return "Impresoras de filamento compatibles";
+    } else if (isResin(product)) {
+      return "Impresoras de resina compatibles";
+    } else if (isElectronica(product)) {
+      return "Perfilería relacionada";
+    } else if (isPerfileria(product)) {
+      return "Electrónica relacionada";
+    } else {
+      return "Productos imprescindibles";
+    }
+  };
 
   // Loading state
   if (loading) {
@@ -317,6 +685,42 @@ export default function ProductDetailPage() {
           </div>
         </div>
 
+        {/* Mapa del producto */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
+          <h2 className="text-xl font-bold mb-4">Ubicación del producto</h2>
+          <div className="w-full h-96 rounded-lg overflow-hidden">
+            {product.latitud && product.longitud ? (
+              <ProductMap
+                products={[product]}
+                height="400px"
+                singleProduct={true}
+                zoom={14}
+              />
+            ) : (
+              <div className="w-full h-96 bg-gray-100 flex items-center justify-center">
+                <div className="text-center p-4">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="mx-auto mb-4 text-gray-400"
+                  >
+                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                  <p>No hay información de ubicación disponible para este producto.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Información adicional - Pestañas */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-8">
           <div className="border-b border-gray-200 mb-6">
@@ -371,14 +775,106 @@ export default function ProductDetailPage() {
             </table>
           </div>
         </div>
+        
+        {/* Productos imprescindibles */}
+        <div className="mt-12 mb-12">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold">{getEssentialsTitle()}</h2>
+            
+            {/* Solo mostrar paginación si hay más de una página */}
+            {totalEssentialsPages > 1 && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleEssentialsPageChange(essentialsPage - 1)}
+                  disabled={essentialsPage <= 1 || loadingEssentials}
+                  className={`px-3 py-1 rounded ${
+                    essentialsPage <= 1 || loadingEssentials
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Anterior
+                </button>
+                
+                <span className="text-sm">
+                  Página {essentialsPage} de {totalEssentialsPages}
+                </span>
+                
+                <button
+                  onClick={() => handleEssentialsPageChange(essentialsPage + 1)}
+                  disabled={essentialsPage >= totalEssentialsPages || loadingEssentials}
+                  className={`px-3 py-1 rounded ${
+                    essentialsPage >= totalEssentialsPages || loadingEssentials
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Siguiente
+                </button>
+              </div>
+            )}
+          </div>
+          
+          <ProductGrid 
+            products={currentEssentialProducts} 
+            loading={loadingEssentials} 
+            emptyMessage={
+              loadingEssentials
+                ? "Cargando productos imprescindibles..."
+                : "No se encontraron productos imprescindibles relacionados."
+            }
+          />
+        </div>
 
         {/* Productos relacionados */}
-        {relatedProducts.length > 0 && (
-          <div className="mt-12">
-            <h2 className="text-2xl font-bold mb-6">Productos relacionados</h2>
-            <ProductGrid products={relatedProducts} />
+        <div className="mt-12">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold">Productos relacionados</h2>
+            
+            {/* Solo mostrar paginación si hay más de una página */}
+            {totalRelatedPages > 1 && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => handleRelatedPageChange(relatedPage - 1)}
+                  disabled={relatedPage <= 1 || loadingRelated}
+                  className={`px-3 py-1 rounded ${
+                    relatedPage <= 1 || loadingRelated
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Anterior
+                </button>
+                
+                <span className="text-sm">
+                  Página {relatedPage} de {totalRelatedPages}
+                </span>
+                
+                <button
+                  onClick={() => handleRelatedPageChange(relatedPage + 1)}
+                  disabled={relatedPage >= totalRelatedPages || loadingRelated}
+                  className={`px-3 py-1 rounded ${
+                    relatedPage >= totalRelatedPages || loadingRelated
+                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Siguiente
+                </button>
+              </div>
+            )}
           </div>
-        )}
+          
+          <ProductGrid 
+            products={currentRelatedProducts}
+            loading={loadingRelated}
+            emptyMessage={
+              loadingRelated
+                ? "Cargando productos relacionados..."
+                : "No se encontraron productos relacionados."
+            }
+          />
+        </div>
       </div>
     </main>
   );
