@@ -190,13 +190,23 @@ export default function ProductDetailPage() {
 
         const productData = await productResponse.json();
         
-        // Depuración: mostrar información completa del producto cargado
-        console.log('Producto cargado:', {
-          id: productData.id,
-          slug: productData.slug,
-          nombre: productData.productName,
-          detalles_completos: productData
-        });
+        // Depuración detallada: mostrar información completa del producto cargado
+        console.log('=== INFORMACIÓN COMPLETA DEL PRODUCTO ===');
+        console.log('ID:', productData.id);
+        console.log('Slug:', productData.slug);
+        console.log('Nombre:', productData.productName || productData.title || productData.name);
+        
+        // Verificar ID de Strapi si existe
+        if (productData.strapiId || (productData.attributes && productData.attributes.id)) {
+          console.log('ID de Strapi:', productData.strapiId || productData.attributes?.id);
+        }
+        
+        // Verificar estructura para determinar si es un producto directo de Strapi
+        if (productData.data && productData.data.id) {
+          console.log('Estructura Strapi detectada - ID real:', productData.data.id);
+        }
+        
+        console.log('Estructura completa:', productData);
         
         setProduct(productData);
 
@@ -268,6 +278,12 @@ export default function ProductDetailPage() {
       
       // Hacemos la petición para incrementar vistas
       try {
+        console.log(`Llamando a API con ID: ${productId}`);
+        
+        // Verificar si estamos usando un ID o slug
+        const isNumericId = !isNaN(Number(productId));
+        console.log(`¿Es ID numérico?: ${isNumericId}. Si no, podría ser un slug.`);
+        
         const response = await fetch(
           `/api/products-views/${productId}/increment`,
           {
@@ -300,6 +316,46 @@ export default function ProductDetailPage() {
 
   // Manejar el cambio de valoración del usuario
   // En tu componente ProductDetailPage
+
+  // Submit rating
+  const submitRating = async (rating: number) => {
+    if (!product) return;
+
+    try {
+      setSubmittingRating(true);
+
+      const response = await fetch(`/api/product-ratings/${product.id}/rate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ rating }),
+      });
+
+      const data = await response.json();
+
+      // Actualizar UI
+      setAverageRating(data.averageRating);
+      setTotalRatings(data.totalRatings);
+      setHasRated(true);
+      setRatingSubmitted(true);
+
+      // Guardar en localStorage
+      const userRatings = JSON.parse(localStorage.getItem("userRatings") || "{}");
+      userRatings[product.id] = rating;
+      localStorage.setItem("userRatings", JSON.stringify(userRatings));
+
+      setTimeout(() => {
+        setRatingSubmitted(false);
+      }, 3000);
+    } catch (error) {
+      console.error("Error al enviar valoración:", error);
+      // Comentado para no mostrar alerta, pero puedes habilitarlo si deseas
+      // alert("No se pudo enviar tu valoración. Inténtalo de nuevo más tarde.");
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
 
   const handleRatingChange = async (newRating: number) => {
     if (!product || hasRated || submittingRating) return;
@@ -340,15 +396,13 @@ export default function ProductDetailPage() {
       userRatings[product.id] = newRating;
       localStorage.setItem('userRatings', JSON.stringify(userRatings));
       
-      // Mensaje temporal
+      // Mostrar mensaje temporal
       setTimeout(() => {
         setRatingSubmitted(false);
       }, 3000);
       
     } catch (error) {
-      console.error("Error al enviar valoración:", error);
-      // Comentado para no mostrar alerta, pero puedes habilitarlo si deseas
-      // alert("No se pudo enviar tu valoración. Inténtalo de nuevo más tarde.");
+      console.error('Error al enviar valoración:', error);
     } finally {
       setSubmittingRating(false);
     }
