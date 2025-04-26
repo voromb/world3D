@@ -1,3 +1,5 @@
+//src/app/shop/[slug]/page.tsx
+
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -6,6 +8,8 @@ import { useParams } from "next/navigation";
 import { ProductType } from "@/types";
 import ProductGrid from "@/components/ui/product/ProductGrid";
 import dynamic from "next/dynamic";
+import { updateProductViewsGraphQL, submitRatingGraphQL } from "@/app/lib/graphql";
+import { useGraphQLSetting } from "@/app/lib/useGraphQLSetting";
 
 // Importación dinámica del componente de mapa para evitar problemas con SSR
 const ProductMap = dynamic(() => import("@/components/ui/map/ProductMap"), {
@@ -172,6 +176,9 @@ export default function ProductDetailPage() {
   const [viewsUpdated, setViewsUpdated] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
+  // Estado para controlar el uso de GraphQL
+  const [useGraphQL, setUseGraphQL] = useGraphQLSetting();
+
   useEffect(() => {
     const fetchProductData = async () => {
       if (!slug) return;
@@ -276,9 +283,24 @@ export default function ProductDetailPage() {
         return;
       }
       
-      // Hacemos la petición para incrementar vistas
+      // Si está activado GraphQL, utilizamos esa API en lugar de REST
+      if (useGraphQL) {
+        console.log("Usando GraphQL para actualizar vistas");
+        try {
+          const newViews = await updateProductViewsGraphQL(productId);
+          console.log("GraphQL: Vistas actualizadas correctamente:", newViews);
+          setProductViews(newViews);
+          setViewsUpdated(true);
+          return;
+        } catch (graphqlError) {
+          console.error("Error usando GraphQL, intentando API REST:", graphqlError);
+          // Si falla GraphQL, continuamos con la API REST como respaldo
+        }
+      }
+      
+      // API REST original
       try {
-        console.log(`Llamando a API con ID: ${productId}`);
+        console.log(`Llamando a API REST con ID: ${productId}`);
         
         // Verificar si estamos usando un ID o slug
         const isNumericId = !isNaN(Number(productId));
@@ -323,7 +345,36 @@ export default function ProductDetailPage() {
 
     try {
       setSubmittingRating(true);
-
+      
+      // Si está activado GraphQL, utilizamos esa API
+      if (useGraphQL) {
+        try {
+          console.log("Usando GraphQL para enviar valoración");
+          const result = await submitRatingGraphQL(product.id.toString(), rating);
+          console.log("GraphQL: Valoración enviada correctamente:", result);
+          
+          // Actualizar UI
+          setAverageRating(result.averageRating);
+          setTotalRatings(result.totalRatings);
+          setHasRated(true);
+          setRatingSubmitted(true);
+          
+          // Guardar en localStorage
+          const userRatings = JSON.parse(localStorage.getItem("userRatings") || "{}");
+          userRatings[product.id] = rating;
+          localStorage.setItem("userRatings", JSON.stringify(userRatings));
+          
+          setTimeout(() => {
+            setRatingSubmitted(false);
+          }, 3000);
+          return;
+        } catch (graphqlError) {
+          console.error("Error usando GraphQL, intentando API REST:", graphqlError);
+          // Si falla GraphQL, continuamos con la API REST como respaldo
+        }
+      }
+      
+      // API REST original
       const response = await fetch(`/api/product-ratings/${product.id}/rate`, {
         method: "POST",
         headers: {
