@@ -8,8 +8,8 @@ import { useParams } from "next/navigation";
 import { ProductType } from "@/types";
 import ProductGrid from "@/components/ui/product/ProductGrid";
 import dynamic from "next/dynamic";
-import { updateProductViewsGraphQL, submitRatingGraphQL } from "@/app/lib/graphql";
-import { useGraphQLSetting } from "@/app/lib/useGraphQLSetting";
+import { updateProductViewsGraphQL, submitRatingGraphQL } from "@/lib/graphql";
+import { useGraphQLSetting } from "../../../lib/useGraphQLSetting";
 
 // Importación dinámica del componente de mapa para evitar problemas con SSR
 const ProductMap = dynamic(() => import("@/components/ui/map/ProductMap"), {
@@ -177,7 +177,7 @@ export default function ProductDetailPage() {
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
   // Estado para controlar el uso de GraphQL
-  const [useGraphQL, setUseGraphQL] = useGraphQLSetting();
+  const { settings: graphQLSettings } = useGraphQLSetting();
 
   useEffect(() => {
     const fetchProductData = async () => {
@@ -275,7 +275,10 @@ export default function ProductDetailPage() {
   // Actualizar el contador de visitas
   const updateProductViews = async (productId: string) => {
     try {
-      console.log("Intentando actualizar vistas para el producto:", productId);
+      // Usar slug o documentId para identificar el producto
+      // Comprobamos que product no sea null antes de acceder a sus propiedades
+      const productIdentifier = product?.slug || productId;
+      console.log("Intentando actualizar vistas para el producto:", productIdentifier);
       
       // Solo incrementamos si no se ha actualizado ya en esta sesión del componente
       if (viewsUpdated) {
@@ -284,7 +287,7 @@ export default function ProductDetailPage() {
       }
       
       // Si está activado GraphQL, utilizamos esa API en lugar de REST
-      if (useGraphQL) {
+      if (graphQLSettings.enabled) {
         console.log("Usando GraphQL para actualizar vistas");
         try {
           const newViews = await updateProductViewsGraphQL(productId);
@@ -300,14 +303,14 @@ export default function ProductDetailPage() {
       
       // API REST original
       try {
-        console.log(`Llamando a API REST con ID: ${productId}`);
+        console.log(`Llamando a API REST con identificador: ${productIdentifier}`);
         
         // Verificar si estamos usando un ID o slug
-        const isNumericId = !isNaN(Number(productId));
+        const isNumericId = !isNaN(Number(productIdentifier));
         console.log(`¿Es ID numérico?: ${isNumericId}. Si no, podría ser un slug.`);
         
         const response = await fetch(
-          `/api/products-views/${productId}/increment`,
+          `/api/products-views/${productIdentifier}/increment`,
           {
             method: "POST",
             // Añadimos un identificador único para evitar duplicidad en el servidor
@@ -347,7 +350,7 @@ export default function ProductDetailPage() {
       setSubmittingRating(true);
       
       // Si está activado GraphQL, utilizamos esa API
-      if (useGraphQL) {
+      if (graphQLSettings.enabled) {
         try {
           console.log("Usando GraphQL para enviar valoración");
           const result = await submitRatingGraphQL(product.id.toString(), rating);
@@ -422,7 +425,11 @@ export default function ProductDetailPage() {
     setSubmittingRating(true);
     
     try {
-      const response = await fetch(`/api/product-ratings/${product.id}/rate`, {
+      // Usar slug para identificar el producto en lugar del ID numérico
+      const productIdentifier = product.slug || product.id; // Fallback al ID solo si no hay slug
+      console.log('Enviando valoración usando identificador:', productIdentifier);
+      
+      const response = await fetch(`/api/product-ratings/${productIdentifier}/rate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

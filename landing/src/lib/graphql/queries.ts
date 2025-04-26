@@ -1,135 +1,100 @@
-import { gql } from "@apollo/client";
+//src/app/lib/graphql/queries.ts
 
-// Consulta para obtener todas las marcas
-export const GET_BRANDS = gql`
-  query GetBrands {
-    brands {
-      data {
-        id
-        attributes {
-          brandName
-          slug
-          mainimage {
-            data {
-              attributes {
-                url
-                formats
-              }
-            }
-          }
-        }
-      }
+import { gql } from 'graphql-request';
+
+// Consultas para productos - Esquema correcto confirmado
+export const FIND_PRODUCT_BY_SLUG = gql`
+  query FindProductBySlug($slug: String!) {
+    products(filters: {slug: {eq: $slug}}, pagination: { limit: 1 }) {
+      documentId
+      slug
+      productName
+      views
+      averageRating
+      totalRatings
     }
   }
 `;
 
-// Consulta para obtener productos filtrados por marca
-export const GET_PRODUCTS_BY_BRAND = gql`
-  query GetProductsByBrand($brandSlug: String!, $page: Int!, $pageSize: Int!) {
-    products(
-      filters: { brands: { slug: { eq: $brandSlug } } }
-      pagination: { page: $page, pageSize: $pageSize }
+export const FIND_PRODUCT_BY_ID = gql`
+  query GetProduct($documentId: ID!) {
+    products(filters: {documentId: {eq: $documentId}}, pagination: { limit: 1 }) {
+      documentId
+      productName
+      views
+      averageRating
+      totalRatings
+      slug
+    }
+  }
+`;
+
+export const GET_ALL_PRODUCTS = gql`
+  query GetAllProducts {
+    products(pagination: { limit: 100 }) {
+      documentId
+      slug
+      productName
+    }
+  }
+`;
+
+// Consulta para obtener todas las valoraciones de un producto
+export const GET_PRODUCT_RATINGS = gql`
+  query GetProductRatings($productId: ID!) {
+    productRatings(filters: {products: {documentId: {eq: $productId}}}) {
+      documentId
+      rating
+    }
+  }
+`;
+
+// Mutaciones para productos
+export const UPDATE_PRODUCT_VIEWS = gql`
+  mutation UpdateProductViews($documentId: ID!, $views: Int!) {
+    updateProduct(
+      documentId: $documentId,
+      data: {
+        views: $views
+      }
     ) {
-      data {
-        id
-        attributes {
-          productName
-          slug
-          description
-          price
-          active
-          isFeatured
-          createdAt
-          cityName
-          state
-          images {
-            data {
-              attributes {
-                url
-                formats
-              }
-            }
-          }
-          categories {
-            data {
-              attributes {
-                categoryName
-                slug
-              }
-            }
-          }
-          brands {
-            data {
-              attributes {
-                brandName
-                slug
-              }
-            }
-          }
-        }
+      documentId
+      views
+    }
+  }
+`;
+
+export const CREATE_RATING = gql`
+  mutation CreateRating($rating: Int!, $productId: ID!) {
+    createProductRating(
+      data: {
+        rating: $rating
+        products: [$productId]
       }
-      meta {
-        pagination {
-          total
-          page
-          pageSize
-          pageCount
-        }
+    ) {
+      documentId
+      rating
+      products {
+        documentId
+        productName
       }
     }
   }
 `;
 
-// Consulta para obtener todos los productos (páginados)
-export const GET_PRODUCTS = gql`
-  query GetProducts($page: Int!, $pageSize: Int!) {
-    products(pagination: { page: $page, pageSize: $pageSize }) {
-      data {
-        id
-        attributes {
-          productName
-          slug
-          description
-          price
-          active
-          isFeatured
-          createdAt
-          cityName
-          state
-          images {
-            data {
-              attributes {
-                url
-                formats
-              }
-            }
-          }
-          categories {
-            data {
-              attributes {
-                categoryName
-                slug
-              }
-            }
-          }
-          brands {
-            data {
-              attributes {
-                brandName
-                slug
-              }
-            }
-          }
-        }
+export const UPDATE_PRODUCT_RATING = gql`
+  mutation UpdateProductRating($documentId: ID!, $averageRating: Float!, $totalRatings: Int!) {
+    updateProduct(
+      documentId: $documentId,
+      data: {
+        averageRating: $averageRating
+        totalRatings: $totalRatings
       }
-      meta {
-        pagination {
-          total
-          page
-          pageSize
-          pageCount
-        }
-      }
+    ) {
+      documentId
+      productName
+      averageRating
+      totalRatings
     }
   }
 `;

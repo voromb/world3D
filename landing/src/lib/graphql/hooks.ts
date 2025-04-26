@@ -1,3 +1,5 @@
+//src/lib/graphql/hooks.ts
+
 import { useQuery } from "@apollo/client";
 import { GET_BRANDS, GET_PRODUCTS, GET_PRODUCTS_BY_BRAND } from "./queries";
 
