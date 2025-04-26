@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { slug: string } }
+  context: { params: { slug: string } }
 ) {
+  // Acceder a los parámetros de forma asíncrona
+  const params = await Promise.resolve(context.params);
   const slug = params.slug;
 
   try {

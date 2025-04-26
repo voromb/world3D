@@ -97,6 +97,22 @@
       "relation": "manyToMany",
       "target": "api::brand.brand",
       "mappedBy": "products"
+    },
+    "product_ratings": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::product-rating.product-rating",
+      "inversedBy": "products"
+    },
+    "averageRating": {
+      "type": "decimal"
+    },
+    "totalRatings": {
+      "type": "integer"
+    },
+    "views": {
+      "type": "integer",
+      "default": 0
     }
   }
 }

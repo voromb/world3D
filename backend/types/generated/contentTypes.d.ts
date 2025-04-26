@@ -467,6 +467,41 @@ export interface ApiImageGeneralImageGeneral
   };
 }
 
+export interface ApiProductRatingProductRating
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'product_ratings';
+  info: {
+    description: '';
+    displayName: 'product-rating';
+    pluralName: 'product-ratings';
+    singularName: 'product-rating';
+  };
+  options: {
+    draftAndPublish: true;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::product-rating.product-rating'
+    > &
+      Schema.Attribute.Private;
+    products: Schema.Attribute.Relation<'manyToMany', 'api::product.product'>;
+    publishedAt: Schema.Attribute.DateTime;
+    rating: Schema.Attribute.Integer;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    users_permissions_users: Schema.Attribute.Relation<
+      'manyToMany',
+      'plugin::users-permissions.user'
+    >;
+  };
+}
+
 export interface ApiProductProduct extends Struct.CollectionTypeSchema {
   collectionName: 'products';
   info: {
@@ -480,6 +515,7 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
   };
   attributes: {
     active: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
+    averageRating: Schema.Attribute.Decimal;
     brands: Schema.Attribute.Relation<'manyToMany', 'api::brand.brand'>;
     categories: Schema.Attribute.Relation<
       'manyToMany',
@@ -508,6 +544,10 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
       Schema.Attribute.Private;
     longitud: Schema.Attribute.Float;
     price: Schema.Attribute.Decimal;
+    product_ratings: Schema.Attribute.Relation<
+      'manyToMany',
+      'api::product-rating.product-rating'
+    >;
     productName: Schema.Attribute.String;
     provinceName: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
@@ -520,9 +560,11 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     State: Schema.Attribute.Enumeration<
       ['Nuevo', 'Seminuevo', 'Nuevo Precintado']
     >;
+    totalRatings: Schema.Attribute.Integer;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    views: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
     weight: Schema.Attribute.Decimal;
   };
 }
@@ -1051,6 +1093,10 @@ export interface PluginUsersPermissionsUser
       Schema.Attribute.SetMinMaxLength<{
         minLength: 6;
       }>;
+    product_ratings: Schema.Attribute.Relation<
+      'manyToMany',
+      'api::product-rating.product-rating'
+    >;
     provider: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
     resetPasswordToken: Schema.Attribute.String & Schema.Attribute.Private;
@@ -1083,6 +1129,7 @@ declare module '@strapi/strapi' {
       'api::brand.brand': ApiBrandBrand;
       'api::category.category': ApiCategoryCategory;
       'api::image-general.image-general': ApiImageGeneralImageGeneral;
+      'api::product-rating.product-rating': ApiProductRatingProductRating;
       'api::product.product': ApiProductProduct;
       'api::shipping-type.shipping-type': ApiShippingTypeShippingType;
       'plugin::content-releases.release': PluginContentReleasesRelease;

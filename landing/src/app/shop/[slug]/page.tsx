@@ -24,6 +24,126 @@ const getImageUrl = (imagePath: string): string => {
   return `${process.env.NEXT_PUBLIC_BACKEND_URL}${imagePath}`;
 };
 
+// Interfaz para las props del componente StarRating
+interface StarRatingProps {
+  rating: number;
+  setRating: (rating: number) => void;
+  disabled?: boolean;
+}
+
+// Componente de estrellas para valoraciones
+const StarRating = ({
+  rating,
+  setRating,
+  disabled = false,
+}: StarRatingProps) => {
+  const [hover, setHover] = useState(0);
+
+  return (
+    <div className="flex items-center">
+      {[...Array(5)].map((_, index) => {
+        const ratingValue = index + 1;
+
+        return (
+          <button
+            type="button"
+            key={index}
+            className={`bg-transparent border-none outline-none cursor-pointer ${
+              disabled ? "cursor-default" : ""
+            }`}
+            onClick={() => !disabled && setRating(ratingValue)}
+            onMouseEnter={() => !disabled && setHover(ratingValue)}
+            onMouseLeave={() => !disabled && setHover(0)}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill={ratingValue <= (hover || rating) ? "#FFD700" : "#e4e5e9"}
+              stroke="#FFD700"
+              strokeWidth="1"
+              className="transition-colors duration-200"
+            >
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+// Interfaz para las props del componente RatingDisplay
+interface RatingDisplayProps {
+  averageRating: number;
+  totalRatings: number;
+}
+
+// Componente para mostrar el promedio de valoraciones
+const RatingDisplay = ({ averageRating, totalRatings }: RatingDisplayProps) => {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex">
+        {[...Array(5)].map((_, index) => {
+          return (
+            <svg
+              key={index}
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill={index < Math.round(averageRating) ? "#FFD700" : "#e4e5e9"}
+              stroke="#FFD700"
+              strokeWidth="1"
+            >
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          );
+        })}
+      </div>
+      <span className="text-sm text-gray-600">
+        {averageRating.toFixed(1)} ({totalRatings}{" "}
+        {totalRatings === 1 ? "valoración" : "valoraciones"})
+      </span>
+    </div>
+  );
+};
+
+// Interfaz para las props del componente ViewCounter
+interface ViewCounterProps {
+  views: number;
+}
+
+// Componente para mostrar el contador de visitas
+const ViewCounter = ({ views }: ViewCounterProps) => {
+  // Asegurarnos de que views siempre sea un número
+  const viewCount = typeof views === 'number' ? views : 0;
+  
+  return (
+    <div className="flex items-center text-gray-600">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="mr-1"
+      >
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+        <circle cx="12" cy="12" r="3"></circle>
+      </svg>
+      <span>
+        {viewCount} {viewCount === 1 ? "visita" : "visitas"}
+      </span>
+    </div>
+  );
+};
+
 export default function ProductDetailPage() {
   const params = useParams();
   const slug = params?.slug as string;
@@ -42,6 +162,16 @@ export default function ProductDetailPage() {
   const [productType, setProductType] = useState(""); // Para depuración
   const PRODUCTS_PER_PAGE = 6; // 6 productos por página
 
+  // Estados para valoraciones y visitas
+  const [userRating, setUserRating] = useState(0);
+  const [averageRating, setAverageRating] = useState(0);
+  const [totalRatings, setTotalRatings] = useState(0);
+  const [hasRated, setHasRated] = useState(false);
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [productViews, setProductViews] = useState(0);
+  const [viewsUpdated, setViewsUpdated] = useState(false);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+
   useEffect(() => {
     const fetchProductData = async () => {
       if (!slug) return;
@@ -59,7 +189,30 @@ export default function ProductDetailPage() {
         }
 
         const productData = await productResponse.json();
+        
+        // Depuración: mostrar información completa del producto cargado
+        console.log('Producto cargado:', {
+          id: productData.id,
+          slug: productData.slug,
+          nombre: productData.productName,
+          detalles_completos: productData
+        });
+        
         setProduct(productData);
+
+        // Inicializar datos de valoraciones y visitas
+        if (productData.averageRating) {
+          setAverageRating(productData.averageRating);
+        }
+        if (productData.totalRatings) {
+          setTotalRatings(productData.totalRatings);
+        }
+        // Siempre inicializar vistas aunque sea con 0
+        setProductViews(productData.views || 0);
+        console.log("Contador de vistas inicializado:", productData.views || 0);
+
+        // Verificar si el usuario ya ha valorado este producto
+        checkUserRating(productData.id);
 
         // Determinar tipo de producto para debugging
         determineProductType(productData);
@@ -67,10 +220,18 @@ export default function ProductDetailPage() {
         // Cargar los productos relacionados y esenciales en paralelo
         await Promise.all([
           loadRelatedProducts(productData, 1), // Forzar página 1 en carga inicial
-          loadEssentialProducts(productData, 1) // Forzar página 1 en carga inicial
+          loadEssentialProducts(productData, 1), // Forzar página 1 en carga inicial
         ]);
 
         setLoading(false);
+
+        // Incrementar el contador de vistas solo si no se ha actualizado ya
+        // Usamos un ref para evitar doble actualización en StrictMode
+        if (viewsUpdated === false) {
+          // Marcamos como actualizado antes de la llamada para evitar duplicidad
+          setViewsUpdated(true);
+          updateProductViews(productData.id);
+        }
       } catch (error) {
         console.error("Error fetching product:", error);
         setProduct(null);
@@ -82,6 +243,116 @@ export default function ProductDetailPage() {
 
     fetchProductData();
   }, [slug]);
+
+  // Verificar si el usuario ya ha valorado este producto
+  const checkUserRating = (productId: string) => {
+    // Obtener valoraciones del almacenamiento local
+    const userRatings = JSON.parse(localStorage.getItem("userRatings") || "{}");
+
+    if (userRatings[productId]) {
+      setUserRating(userRatings[productId]);
+      setHasRated(true);
+    }
+  };
+
+  // Actualizar el contador de visitas
+  const updateProductViews = async (productId: string) => {
+    try {
+      console.log("Intentando actualizar vistas para el producto:", productId);
+      
+      // Solo incrementamos si no se ha actualizado ya en esta sesión del componente
+      if (viewsUpdated) {
+        console.log("Contador ya actualizado en esta sesión");
+        return;
+      }
+      
+      // Hacemos la petición para incrementar vistas
+      try {
+        const response = await fetch(
+          `/api/products-views/${productId}/increment`,
+          {
+            method: "POST",
+            // Añadimos un identificador único para evitar duplicidad en el servidor
+            headers: {
+              'X-Request-ID': `${Date.now()}-${Math.random()}`,
+            }
+          }
+        );
+
+        const data = await response.json();
+        console.log("Respuesta del incremento de vistas:", data);
+        
+        // Actualizar el contador en la interfaz
+        if (data && typeof data.views === 'number') {
+          console.log("API devolvió contador:", data.views);
+          setProductViews(data.views);
+        }
+
+        // Marcamos como actualizado para evitar múltiples llamadas
+        setViewsUpdated(true);
+      } catch (error) {
+        console.error("Error en la petición:", error);
+      }
+    } catch (error) {
+      console.error("Error al actualizar las visitas:", error);
+    }
+  };
+
+  // Manejar el cambio de valoración del usuario
+  // En tu componente ProductDetailPage
+
+  const handleRatingChange = async (newRating: number) => {
+    if (!product || hasRated || submittingRating) return;
+    
+    // Depuración: mostrar detalles del producto
+    console.log('Producto a valorar:', {
+      id: product.id,
+      nombre: product.productName,
+      slug: product.slug
+    });
+    
+    setUserRating(newRating);
+    setSubmittingRating(true);
+    
+    try {
+      const response = await fetch(`/api/product-ratings/${product.id}/rate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ rating: newRating }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al enviar la valoración');
+      }
+      
+      const data = await response.json();
+      
+      // Actualizar estados
+      setAverageRating(data.averageRating);
+      setTotalRatings(data.totalRatings);
+      setHasRated(true);
+      setRatingSubmitted(true);
+      
+      // Guardar en localStorage
+      const userRatings = JSON.parse(localStorage.getItem('userRatings') || '{}');
+      userRatings[product.id] = newRating;
+      localStorage.setItem('userRatings', JSON.stringify(userRatings));
+      
+      // Mensaje temporal
+      setTimeout(() => {
+        setRatingSubmitted(false);
+      }, 3000);
+      
+    } catch (error) {
+      console.error("Error al enviar valoración:", error);
+      // Comentado para no mostrar alerta, pero puedes habilitarlo si deseas
+      // alert("No se pudo enviar tu valoración. Inténtalo de nuevo más tarde.");
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
 
   // Función para determinar el tipo de producto para debugging
   const determineProductType = (currentProduct: ProductType) => {
@@ -103,34 +374,43 @@ export default function ProductDetailPage() {
   };
 
   // FUNCIÓN para cargar productos relacionados
-  const loadRelatedProducts = async (currentProduct: ProductType, pageNumber: number) => {
+  const loadRelatedProducts = async (
+    currentProduct: ProductType,
+    pageNumber: number
+  ) => {
     if (!currentProduct?.categories?.[0]) {
       setRelatedProducts([]);
       setLoadingRelated(false);
       return;
     }
-    
+
     try {
       setLoadingRelated(true);
       const categorySlug = currentProduct.categories[0].slug;
-      
-      console.log(`[LOG] Cargando productos relacionados, página ${pageNumber}, categoría ${categorySlug}`);
-      
+
+      console.log(
+        `[LOG] Cargando productos relacionados, página ${pageNumber}, categoría ${categorySlug}`
+      );
+
       // Solicitar TODOS los productos para poder calcular correctamente las páginas totales
       const response = await fetch(
         `/api/products?category=${categorySlug}&exclude=${currentProduct.id}&limit=100`
       );
-      
+
       if (!response.ok) {
-        throw new Error(`Error al obtener productos relacionados: ${response.status}`);
+        throw new Error(
+          `Error al obtener productos relacionados: ${response.status}`
+        );
       }
-      
+
       const data = await response.json();
-      
+
       // Verificar que tenemos datos válidos
       if (data && Array.isArray(data.data)) {
-        console.log(`[LOG] Productos relacionados recibidos: ${data.data.length}`);
-        
+        console.log(
+          `[LOG] Productos relacionados recibidos: ${data.data.length}`
+        );
+
         // Si no hay productos, no hacer nada
         if (data.data.length === 0) {
           setRelatedProducts([]);
@@ -139,24 +419,26 @@ export default function ProductDetailPage() {
           setLoadingRelated(false);
           return;
         }
-        
+
         // Actualizar estado con TODOS los productos
         setRelatedProducts(data.data);
-        
+
         // Calcular cuántas páginas REALES hay (basado en productos disponibles)
         const realPageCount = Math.ceil(data.data.length / PRODUCTS_PER_PAGE);
         console.log(`[LOG] Páginas reales relacionados: ${realPageCount}`);
-        
+
         // Si la página solicitada es mayor que las páginas reales, ajustar a la última página
         if (pageNumber > realPageCount) {
           setRelatedPage(realPageCount);
         } else {
           setRelatedPage(pageNumber);
         }
-        
+
         setTotalRelatedPages(realPageCount);
       } else {
-        console.warn("[WARN] No se recibieron datos válidos para productos relacionados");
+        console.warn(
+          "[WARN] No se recibieron datos válidos para productos relacionados"
+        );
         setRelatedProducts([]);
         setTotalRelatedPages(1);
         setRelatedPage(1);
@@ -172,13 +454,16 @@ export default function ProductDetailPage() {
   };
 
   // FUNCIÓN para cargar productos esenciales
-  const loadEssentialProducts = async (currentProduct: ProductType, pageNumber: number) => {
+  const loadEssentialProducts = async (
+    currentProduct: ProductType,
+    pageNumber: number
+  ) => {
     try {
       setLoadingEssentials(true);
-      
+
       // Determinar qué categoría buscar
       let categoryToFetch = "";
-      
+
       if (isFilamentPrinter(currentProduct)) {
         categoryToFetch = "filamento";
       } else if (isResinPrinter(currentProduct)) {
@@ -192,30 +477,36 @@ export default function ProductDetailPage() {
       } else if (isPerfileria(currentProduct)) {
         categoryToFetch = "electronica";
       }
-      
+
       // Si no se determinó una categoría específica, usar productos destacados
       if (!categoryToFetch) {
         await loadFeaturedProducts(currentProduct, pageNumber);
         return;
       }
-      
-      console.log(`[LOG] Cargando productos esenciales, página ${pageNumber}, categoría ${categoryToFetch}`);
-      
+
+      console.log(
+        `[LOG] Cargando productos esenciales, página ${pageNumber}, categoría ${categoryToFetch}`
+      );
+
       // Solicitar TODOS los productos para poder calcular correctamente las páginas totales
       const response = await fetch(
         `/api/products?category=${categoryToFetch}&exclude=${currentProduct.id}&limit=100`
       );
-      
+
       if (!response.ok) {
-        throw new Error(`Error al obtener productos esenciales: ${response.status}`);
+        throw new Error(
+          `Error al obtener productos esenciales: ${response.status}`
+        );
       }
-      
+
       const data = await response.json();
-      
+
       // Verificar que tenemos datos válidos
       if (data && Array.isArray(data.data)) {
-        console.log(`[LOG] Productos esenciales recibidos: ${data.data.length}`);
-        
+        console.log(
+          `[LOG] Productos esenciales recibidos: ${data.data.length}`
+        );
+
         // Si no hay productos, no hacer nada
         if (data.data.length === 0) {
           setEssentialProducts([]);
@@ -224,24 +515,26 @@ export default function ProductDetailPage() {
           setLoadingEssentials(false);
           return;
         }
-        
+
         // Actualizar estado con TODOS los productos
         setEssentialProducts(data.data);
-        
+
         // Calcular cuántas páginas REALES hay (basado en productos disponibles)
         const realPageCount = Math.ceil(data.data.length / PRODUCTS_PER_PAGE);
         console.log(`[LOG] Páginas reales esenciales: ${realPageCount}`);
-        
+
         // Si la página solicitada es mayor que las páginas reales, ajustar a la última página
         if (pageNumber > realPageCount) {
           setEssentialsPage(realPageCount);
         } else {
           setEssentialsPage(pageNumber);
         }
-        
+
         setTotalEssentialsPages(realPageCount);
       } else {
-        console.warn("[WARN] No se recibieron datos válidos para productos esenciales");
+        console.warn(
+          "[WARN] No se recibieron datos válidos para productos esenciales"
+        );
         setEssentialProducts([]);
         setTotalEssentialsPages(1);
         setEssentialsPage(1);
@@ -257,24 +550,31 @@ export default function ProductDetailPage() {
   };
 
   // Función para cargar productos destacados
-  const loadFeaturedProducts = async (currentProduct: ProductType, pageNumber: number) => {
+  const loadFeaturedProducts = async (
+    currentProduct: ProductType,
+    pageNumber: number
+  ) => {
     try {
       console.log(`[LOG] Cargando productos destacados, página ${pageNumber}`);
-      
+
       // Solicitar TODOS los productos destacados
       const response = await fetch(
         `/api/products?isFeatured=true&exclude=${currentProduct.id}&limit=100`
       );
-      
+
       if (!response.ok) {
-        throw new Error(`Error al obtener productos destacados: ${response.status}`);
+        throw new Error(
+          `Error al obtener productos destacados: ${response.status}`
+        );
       }
-      
+
       const data = await response.json();
-      
+
       if (data && Array.isArray(data.data)) {
-        console.log(`[LOG] Productos destacados recibidos: ${data.data.length}`);
-        
+        console.log(
+          `[LOG] Productos destacados recibidos: ${data.data.length}`
+        );
+
         // Si no hay productos, no hacer nada
         if (data.data.length === 0) {
           setEssentialProducts([]);
@@ -283,24 +583,26 @@ export default function ProductDetailPage() {
           setLoadingEssentials(false);
           return;
         }
-        
+
         // Actualizar estado con TODOS los productos
         setEssentialProducts(data.data);
-        
+
         // Calcular cuántas páginas REALES hay (basado en productos disponibles)
         const realPageCount = Math.ceil(data.data.length / PRODUCTS_PER_PAGE);
         console.log(`[LOG] Páginas reales destacados: ${realPageCount}`);
-        
+
         // Si la página solicitada es mayor que las páginas reales, ajustar a la última página
         if (pageNumber > realPageCount) {
           setEssentialsPage(realPageCount);
         } else {
           setEssentialsPage(pageNumber);
         }
-        
+
         setTotalEssentialsPages(realPageCount);
       } else {
-        console.warn("[WARN] No se recibieron datos válidos para productos destacados");
+        console.warn(
+          "[WARN] No se recibieron datos válidos para productos destacados"
+        );
         setEssentialProducts([]);
         setTotalEssentialsPages(1);
         setEssentialsPage(1);
@@ -317,7 +619,8 @@ export default function ProductDetailPage() {
 
   // Funciones simplificadas para cambiar página
   const handleEssentialsPageChange = (newPage: number) => {
-    if (newPage < 1 || newPage > totalEssentialsPages || loadingEssentials) return;
+    if (newPage < 1 || newPage > totalEssentialsPages || loadingEssentials)
+      return;
     setEssentialsPage(newPage);
   };
 
@@ -328,89 +631,121 @@ export default function ProductDetailPage() {
 
   // Funciones auxiliares para determinar el tipo de producto
   const isFilamentPrinter = (product: ProductType): boolean => {
-    return hasCategory(product, 'impresora-filamento') || 
-           hasCategory(product, 'fdm') || 
-           hasKeywords(product, ['impresora fdm', 'impresora filamento', 'impresora fff']);
+    return (
+      hasCategory(product, "impresora-filamento") ||
+      hasCategory(product, "fdm") ||
+      hasKeywords(product, [
+        "impresora fdm",
+        "impresora filamento",
+        "impresora fff",
+      ])
+    );
   };
 
   const isResinPrinter = (product: ProductType): boolean => {
-    return hasCategory(product, 'impresora-resina') || 
-           hasCategory(product, 'sla') || 
-           hasCategory(product, 'dlp') || 
-           hasKeywords(product, ['impresora resina', 'impresora sla', 'impresora dlp', 'impresora lcd']);
+    return (
+      hasCategory(product, "impresora-resina") ||
+      hasCategory(product, "sla") ||
+      hasCategory(product, "dlp") ||
+      hasKeywords(product, [
+        "impresora resina",
+        "impresora sla",
+        "impresora dlp",
+        "impresora lcd",
+      ])
+    );
   };
 
   const isFilament = (product: ProductType): boolean => {
-    return hasCategory(product, 'filamento') || 
-           hasKeywords(product, ['filamento', 'pla', 'abs', 'petg', 'tpu', 'nylon']);
+    return (
+      hasCategory(product, "filamento") ||
+      hasKeywords(product, ["filamento", "pla", "abs", "petg", "tpu", "nylon"])
+    );
   };
 
   const isResin = (product: ProductType): boolean => {
-    return hasCategory(product, 'resina') || 
-           hasKeywords(product, ['resina', 'resin', 'fotopolímero']);
+    return (
+      hasCategory(product, "resina") ||
+      hasKeywords(product, ["resina", "resin", "fotopolímero"])
+    );
   };
 
   const isElectronica = (product: ProductType): boolean => {
-    return hasCategory(product, 'electronica') ||
-           hasKeywords(product, ['electrónica', 'placa', 'arduino', 'raspberry']);
+    return (
+      hasCategory(product, "electronica") ||
+      hasKeywords(product, ["electrónica", "placa", "arduino", "raspberry"])
+    );
   };
-  
+
   const isPerfileria = (product: ProductType): boolean => {
-    return hasCategory(product, 'perfileria') ||
-           hasKeywords(product, ['perfil', 'perfilería', 'aluminio']);
+    return (
+      hasCategory(product, "perfileria") ||
+      hasKeywords(product, ["perfil", "perfilería", "aluminio"])
+    );
   };
 
   const hasCategory = (product: ProductType, categorySlug: string): boolean => {
     if (!product.categories) return false;
-    
-    return product.categories.some(cat => 
-      cat.slug != null && (
-        cat.slug === categorySlug || 
-        cat.slug.includes(categorySlug) ||
-        (cat.categoryName && cat.categoryName.toLowerCase().includes(categorySlug.toLowerCase()))
-      )
+
+    return product.categories.some(
+      (cat) =>
+        cat.slug != null &&
+        (cat.slug === categorySlug ||
+          cat.slug.includes(categorySlug) ||
+          (cat.categoryName &&
+            cat.categoryName
+              .toLowerCase()
+              .includes(categorySlug.toLowerCase())))
     );
   };
 
   const hasKeywords = (product: ProductType, keywords: string[]): boolean => {
     if (!product.productName) return false;
-    
+
     const name = product.productName.toLowerCase();
-    const description = product.description?.toLowerCase() || '';
-    return keywords.some(keyword => name.includes(keyword) || description.includes(keyword));
+    const description = product.description?.toLowerCase() || "";
+    return keywords.some(
+      (keyword) => name.includes(keyword) || description.includes(keyword)
+    );
   };
 
   // Función para obtener un subconjunto de productos para la página actual
-  const getPageProducts = (products: ProductType[], page: number): ProductType[] => {
+  const getPageProducts = (
+    products: ProductType[],
+    page: number
+  ): ProductType[] => {
     // Si no hay productos o el array es inválido, devolver array vacío
     if (!products || !Array.isArray(products) || products.length === 0) {
       return [];
     }
-    
+
     // Calcular índices de inicio y fin para la página actual
     const startIndex = (page - 1) * PRODUCTS_PER_PAGE;
     const endIndex = startIndex + PRODUCTS_PER_PAGE;
-    
+
     // Si el índice de inicio es mayor que la longitud del array, devolver los primeros 6
     if (startIndex >= products.length) {
       return products.slice(0, Math.min(PRODUCTS_PER_PAGE, products.length));
     }
-    
+
     // Devolver los productos de la página actual
     return products.slice(startIndex, endIndex);
   };
 
   // Obtener los productos para la página actual
-  const currentEssentialProducts = getPageProducts(essentialProducts, essentialsPage);
+  const currentEssentialProducts = getPageProducts(
+    essentialProducts,
+    essentialsPage
+  );
   const currentRelatedProducts = getPageProducts(relatedProducts, relatedPage);
 
   // Determinar qué tipo de título mostrar para la sección de imprescindibles
   const getEssentialsTitle = () => {
-    // Si el producto es null, devolver un título genérico
+    // Verificar si product es null antes de usar las funciones de validación
     if (!product) {
-      return "Productos imprescindibles";
+      return "Productos relacionados";
     }
-    
+
     if (isFilamentPrinter(product)) {
       return "Filamentos imprescindibles";
     } else if (isResinPrinter(product)) {
@@ -569,21 +904,82 @@ export default function ProductDetailPage() {
             <div>
               <h1 className="text-3xl font-bold mb-2">{product.productName}</h1>
 
-              <div className="flex items-center mb-4">
-                {product.brands?.[0] && (
-                  <span className="text-gray-600 mr-4">
-                    Marca:{" "}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                <div className="flex items-center">
+                  {product.brands?.[0] && (
+                    <span className="text-gray-600 mr-4">
+                      Marca:{" "}
+                      <span className="font-semibold">
+                        {product.brands[0].brandName}
+                      </span>
+                    </span>
+                  )}
+                  <span className="text-gray-600">
+                    Estado:{" "}
                     <span className="font-semibold">
-                      {product.brands[0].brandName}
+                      {product.state || "Usado"}
                     </span>
                   </span>
-                )}
-                <span className="text-gray-600">
-                  Estado:{" "}
-                  <span className="font-semibold">
-                    {product.state || "Usado"}
-                  </span>
-                </span>
+                </div>
+
+                {/* Contador de visitas */}
+                <ViewCounter views={productViews} />
+              </div>
+
+              {/* Sistema de valoración directo */}
+              <div className="mb-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                  {totalRatings > 0 && (
+                    <RatingDisplay
+                      averageRating={averageRating}
+                      totalRatings={totalRatings}
+                    />
+                  )}
+
+                  <div className="flex flex-col">
+                    <div className="flex items-center">
+                      {hasRated ? (
+                        <div className="flex items-center">
+                          <StarRating
+                            rating={userRating}
+                            setRating={() => {}}
+                            disabled={true}
+                          />
+                          <span className="ml-2 text-sm text-green-600">
+                            ¡Gracias por tu valoración!
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <div className="flex items-center">
+                            <StarRating
+                              rating={userRating}
+                              setRating={handleRatingChange}
+                              disabled={submittingRating}
+                            />
+                            {submittingRating && (
+                              <span className="ml-2 text-sm text-gray-600">
+                                Enviando...
+                              </span>
+                            )}
+                          </div>
+                          {!submittingRating && !ratingSubmitted && (
+                            <span className="text-sm text-gray-600 mt-1">
+                              {totalRatings > 0
+                                ? "Haz clic para valorar"
+                                : "Sé el primero en valorar este producto"}
+                            </span>
+                          )}
+                          {ratingSubmitted && (
+                            <span className="text-sm text-green-600 mt-1">
+                              ¡Gracias por tu valoración!
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="text-3xl font-bold text-blue-600 mb-6">
@@ -714,7 +1110,10 @@ export default function ProductDetailPage() {
                     <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
                     <circle cx="12" cy="10" r="3"></circle>
                   </svg>
-                  <p>No hay información de ubicación disponible para este producto.</p>
+                  <p>
+                    No hay información de ubicación disponible para este
+                    producto.
+                  </p>
                 </div>
               </div>
             )}
@@ -775,12 +1174,12 @@ export default function ProductDetailPage() {
             </table>
           </div>
         </div>
-        
+
         {/* Productos imprescindibles */}
         <div className="mt-12 mb-12">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold">{getEssentialsTitle()}</h2>
-            
+
             {/* Solo mostrar paginación si hay más de una página */}
             {totalEssentialsPages > 1 && (
               <div className="flex items-center space-x-2">
@@ -789,24 +1188,26 @@ export default function ProductDetailPage() {
                   disabled={essentialsPage <= 1 || loadingEssentials}
                   className={`px-3 py-1 rounded ${
                     essentialsPage <= 1 || loadingEssentials
-                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                   }`}
                 >
                   Anterior
                 </button>
-                
+
                 <span className="text-sm">
                   Página {essentialsPage} de {totalEssentialsPages}
                 </span>
-                
+
                 <button
                   onClick={() => handleEssentialsPageChange(essentialsPage + 1)}
-                  disabled={essentialsPage >= totalEssentialsPages || loadingEssentials}
+                  disabled={
+                    essentialsPage >= totalEssentialsPages || loadingEssentials
+                  }
                   className={`px-3 py-1 rounded ${
                     essentialsPage >= totalEssentialsPages || loadingEssentials
-                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                   }`}
                 >
                   Siguiente
@@ -814,10 +1215,10 @@ export default function ProductDetailPage() {
               </div>
             )}
           </div>
-          
-          <ProductGrid 
-            products={currentEssentialProducts} 
-            loading={loadingEssentials} 
+
+          <ProductGrid
+            products={currentEssentialProducts}
+            loading={loadingEssentials}
             emptyMessage={
               loadingEssentials
                 ? "Cargando productos imprescindibles..."
@@ -830,7 +1231,7 @@ export default function ProductDetailPage() {
         <div className="mt-12">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold">Productos relacionados</h2>
-            
+
             {/* Solo mostrar paginación si hay más de una página */}
             {totalRelatedPages > 1 && (
               <div className="flex items-center space-x-2">
@@ -839,24 +1240,24 @@ export default function ProductDetailPage() {
                   disabled={relatedPage <= 1 || loadingRelated}
                   className={`px-3 py-1 rounded ${
                     relatedPage <= 1 || loadingRelated
-                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                   }`}
                 >
                   Anterior
                 </button>
-                
+
                 <span className="text-sm">
                   Página {relatedPage} de {totalRelatedPages}
                 </span>
-                
+
                 <button
                   onClick={() => handleRelatedPageChange(relatedPage + 1)}
                   disabled={relatedPage >= totalRelatedPages || loadingRelated}
                   className={`px-3 py-1 rounded ${
                     relatedPage >= totalRelatedPages || loadingRelated
-                      ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                   }`}
                 >
                   Siguiente
@@ -864,8 +1265,8 @@ export default function ProductDetailPage() {
               </div>
             )}
           </div>
-          
-          <ProductGrid 
+
+          <ProductGrid
             products={currentRelatedProducts}
             loading={loadingRelated}
             emptyMessage={
