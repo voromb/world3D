@@ -25,7 +25,7 @@ export type {
   UpdateProductResponse
 } from './client';
 
-// Re-exportar la función incrementProductViews directamente
+// Re-exportar la función incrementProductViews y el mapeo directamente
 export { incrementProductViews, ID_TO_SLUG_MAP };
 
 // Interfaz para los resultados de producto transformados
@@ -171,6 +171,18 @@ export async function submitRatingGraphQL(
       
       console.log('Resultado creación valoración:', JSON.stringify(createResult, null, 2));
       
+      // Verificar que la creación de la valoración fue exitosa
+      if (!createResult?.data?.createProductRating) {
+        console.error('Error al crear valoración - formato de respuesta incorrecto');
+        return { averageRating: rating, totalRatings: 1 };
+      }
+      
+      // Extraer el rating directamente del campo rating
+      const ratingValue = createResult.data.createProductRating.rating;
+      
+      console.log(`Valoración creada correctamente con rating: ${ratingValue}`);
+      
+      
       // 2. Actualizar la media y el total de valoraciones del producto
       // Como ya tenemos el rating actual, añadimos 1 al total y recalculamos
       const currentAverage = product.averageRating || 0;
@@ -202,12 +214,25 @@ export async function submitRatingGraphQL(
         });
         
         console.log('Resultado actualización producto:', JSON.stringify(updateResult, null, 2));
-        console.log(`Valoración guardada con éxito: ${rating}`);
         
-        return {
-          averageRating: roundedAverage,
-          totalRatings: newTotal
-        };
+        // Verificar que la actualización fue exitosa
+        if (updateResult?.data?.updateProduct) {
+          const updatedProduct = updateResult.data.updateProduct;
+          console.log(`Valoración guardada con éxito: ${rating}`);
+          console.log(`Nueva valoración media: ${updatedProduct.averageRating}, Total de valoraciones: ${updatedProduct.totalRatings}`);
+          
+          // Usar los valores devueltos por la API, o los calculados si no hay valores devueltos
+          return {
+            averageRating: updatedProduct.averageRating || roundedAverage,
+            totalRatings: updatedProduct.totalRatings || newTotal
+          };
+        } else {
+          console.warn('La actualización del producto no devuelvió datos esperados, usando valores calculados');
+          return {
+            averageRating: roundedAverage,
+            totalRatings: newTotal
+          };
+        }
       } catch (updateError) {
         console.error('Error al actualizar producto:', updateError);
         // Devolver los valores calculados aunque la actualización haya fallado

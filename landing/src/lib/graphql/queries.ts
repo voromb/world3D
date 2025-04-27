@@ -96,13 +96,10 @@ export const CREATE_RATING = gql`
     createProductRating(
       data: {
         rating: $rating
-        views: 0
-        product: { connect: [ { id: $productId } ] }
+        products: [$productId]
       }
     ) {
-      data {
-        id
-      }
+      rating
     }
   }
 `;
@@ -116,15 +113,9 @@ export const UPDATE_PRODUCT_RATING = gql`
         totalRatings: $totalRatings
       }
     ) {
-      data {
-        id
-        attributes {
-          documentId
-          productName
-          averageRating
-          totalRatings
-        }
-      }
+      documentId
+      averageRating
+      totalRatings
     }
   }
 `;
