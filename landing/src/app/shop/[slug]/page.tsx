@@ -8,7 +8,7 @@ import { useParams } from "next/navigation";
 import { ProductType } from "@/types";
 import ProductGrid from "@/components/ui/product/ProductGrid";
 import dynamic from "next/dynamic";
-import { updateProductViewsGraphQL, submitRatingGraphQL } from "@/lib/graphql";
+import { updateProductViewsGraphQL, submitRatingGraphQL, addToFavorites, checkProductInFavorites, removeFromFavorites } from "@/lib/graphql";
 import { useGraphQLSetting } from "../../../lib/useGraphQLSetting";
 
 // Importación dinámica del componente de mapa para evitar problemas con SSR
@@ -176,8 +176,20 @@ export default function ProductDetailPage() {
   const [viewsUpdated, setViewsUpdated] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
+  // Estados para la funcionalidad de favoritos
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteId, setFavoriteId] = useState<string | null>(null);
+  const [processingFavorite, setProcessingFavorite] = useState(false);
+
   // Estado para controlar el uso de GraphQL
   const { settings: graphQLSettings } = useGraphQLSetting();
+
+  useEffect(() => {
+    // Verificar si el producto está en favoritos cuando cambie el producto
+    if (product?.documentId) {
+      checkFavoriteStatus();
+    }
+  }, [product]);
 
   useEffect(() => {
     const fetchProductData = async () => {
@@ -301,6 +313,70 @@ export default function ProductDetailPage() {
     }
     
     console.log("Las valoraciones se gestionan directamente en la base de datos a través de GraphQL");
+  };
+
+  // Verificar si el producto está en favoritos
+  const checkFavoriteStatus = async () => {
+    if (!product?.documentId) return;
+    
+    try {
+      // Usando un ID de usuario simulado/hardcodeado por ahora
+      // En un sistema real, este debería ser el ID del usuario autenticado
+      const userId = "1"; // ID de usuario simulado
+      
+      // Verificar si el producto está en favoritos
+      const existingFavoriteId = await checkProductInFavorites(userId, product.documentId);
+      
+      if (existingFavoriteId) {
+        setIsFavorite(true);
+        setFavoriteId(existingFavoriteId);
+        console.log(`Producto ya en favoritos con ID: ${existingFavoriteId}`);
+      } else {
+        setIsFavorite(false);
+        setFavoriteId(null);
+      }
+    } catch (error) {
+      console.error('Error al verificar estado de favorito:', error);
+    }
+  };
+  
+  // Función para añadir o quitar de favoritos
+  const handleToggleFavorite = async () => {
+    if (!product?.documentId || processingFavorite) return;
+    
+    setProcessingFavorite(true);
+    
+    try {
+      // Usando un ID de usuario simulado/hardcodeado por ahora
+      const userId = "1"; // ID de usuario simulado
+      
+      if (isFavorite && favoriteId) {
+        // Quitar de favoritos
+        const success = await removeFromFavorites(favoriteId);
+        
+        if (success) {
+          setIsFavorite(false);
+          setFavoriteId(null);
+          console.log('Producto eliminado de favoritos');
+        }
+      } else {
+        // Añadir a favoritos
+        const success = await addToFavorites(userId, product.documentId);
+        
+        if (success) {
+          // Verificar nuevamente para obtener el ID del favorito
+          const newFavoriteId = await checkProductInFavorites(userId, product.documentId);
+          
+          setIsFavorite(true);
+          setFavoriteId(newFavoriteId);
+          console.log('Producto añadido a favoritos');
+        }
+      }
+    } catch (error) {
+      console.error('Error al gestionar favorito:', error);
+    } finally {
+      setProcessingFavorite(false);
+    }
   };
 
   // Actualizar el contador de visitas
@@ -1178,13 +1254,17 @@ export default function ProductDetailPage() {
                 <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors">
                   Contactar con el vendedor
                 </button>
-                <button className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center">
+                <button 
+                  onClick={handleToggleFavorite}
+                  disabled={processingFavorite}
+                  className={`w-full ${isFavorite ? 'bg-pink-100 hover:bg-pink-200 text-pink-800' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'} font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center ${processingFavorite ? 'opacity-70 cursor-not-allowed' : ''}`}
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="20"
                     height="20"
                     viewBox="0 0 24 24"
-                    fill="none"
+                    fill={isFavorite ? "currentColor" : "none"}
                     stroke="currentColor"
                     strokeWidth="2"
                     strokeLinecap="round"
@@ -1193,7 +1273,7 @@ export default function ProductDetailPage() {
                   >
                     <path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 0C1.46 6.7 1.33 10.28 4 13l8 8 8-8c2.67-2.72 2.54-6.3.42-8.42z"></path>
                   </svg>
-                  Añadir a favoritos
+                  {isFavorite ? 'Quitar de favoritos' : 'Añadir a favoritos'}
                 </button>
               </div>
             </div>

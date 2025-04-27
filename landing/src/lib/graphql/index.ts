@@ -8,12 +8,16 @@ import {
   UPDATE_PRODUCT_VIEWS,
   CREATE_RATING,
   GET_PRODUCT_RATINGS,
-  UPDATE_PRODUCT_RATING
+  UPDATE_PRODUCT_RATING,
+  GET_USER_FAVORITES,
+  ADD_TO_FAVORITE,
+  REMOVE_FROM_FAVORITE,
+  CHECK_PRODUCT_IN_FAVORITES
 } from './queries';
 import { incrementProductViews, ID_TO_SLUG_MAP } from './utils';
 
 // Re-exportar funciones y tipos específicos desde client.ts
-// Usar 'export type' para interfaces y types cuando isolatedModules está habilitado
+// Usar 'export type' para interfaces y tipos cuando isolatedModules está habilitado
 export { createApolloClient } from './client';
 export type { 
   ProductAttribute,
@@ -248,5 +252,160 @@ export async function submitRatingGraphQL(
   } catch (error) {
     console.error("GraphQL: Error general al enviar valoración:", error);
     return { averageRating: rating, totalRatings: 1 }; // Valor simulado en caso de error
+  }
+}
+
+// Función para obtener los favoritos de un usuario
+export async function getUserFavorites(userId: string): Promise<any[]> {
+  try {
+    console.log(`GraphQL: Obteniendo favoritos para el usuario ${userId}`);
+    
+    // Hacemos una solicitud directa al servidor Strapi para obtener los favoritos
+    const response = await fetch('http://localhost:1337/graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: `
+          query {
+            favorites(pagination: {limit: 100}) {
+              documentId
+              products {
+                documentId
+                slug
+                productName
+                description
+                price
+                images {
+                  url
+                  alternativeText
+                }
+                averageRating
+              }
+            }
+          }
+        `
+      }),
+    });
+    
+    const responseData = await response.json();
+    console.log('Respuesta directa del servidor Strapi:', JSON.stringify(responseData, null, 2));
+    
+    if (responseData?.data?.favorites && Array.isArray(responseData.data.favorites)) {
+      // Procesamiento de favoritos
+      const userFavorites = responseData.data.favorites.map((fav: any) => {
+        // Verificar que los productos existan
+        const products = Array.isArray(fav.products) ? fav.products : [];
+        
+        return {
+          documentId: fav.documentId,
+          products: products.map((product: any) => ({
+            documentId: product.documentId,
+            slug: product.slug || '',
+            productName: product.productName || 'Producto sin nombre',
+            description: product.description || '',
+            price: product.price || 0,
+            images: Array.isArray(product.images) ? product.images.map((img: any) => ({
+              url: img.url.startsWith('/uploads/') ? `http://localhost:1337${img.url}` : img.url,
+              alternativeText: img.alternativeText || ''
+            })) : [],
+            averageRating: product.averageRating || 0
+          }))
+        };
+      });
+      
+      console.log(`Se encontraron ${userFavorites.length} favoritos con ${userFavorites.reduce((total: number, fav: any) => total + (fav.products?.length || 0), 0)} productos`);
+      return userFavorites;
+    }
+    
+    console.warn('No se encontraron favoritos en la respuesta GraphQL');
+    return [];
+  } catch (error) {
+    console.error('Error al obtener favoritos:', error);
+    return [];
+  }
+}
+
+// Función para añadir un producto a favoritos
+export async function addToFavorites(userId: string, productId: string): Promise<boolean> {
+  try {
+    console.log(`GraphQL: Añadiendo producto ${productId} a favoritos del usuario ${userId}`);
+    
+    // Primero verificamos si ya está en favoritos
+    const checkResult = await graphqlRequest(CHECK_PRODUCT_IN_FAVORITES, { 
+      userId, 
+      productId 
+    });
+    
+    if (checkResult?.data?.favorites && checkResult.data.favorites.length > 0) {
+      console.log('El producto ya está en favoritos');
+      return true; // Ya está en favoritos
+    }
+    
+    // Si no está en favoritos, lo añadimos
+    const result = await graphqlRequest(ADD_TO_FAVORITE, { 
+      userId, 
+      productId 
+    });
+    
+    if (result?.data?.createFavorite?.documentId) {
+      console.log('Producto añadido a favoritos con éxito');
+      return true;
+    }
+    
+    console.warn('No se pudo añadir el producto a favoritos');
+    return false;
+  } catch (error) {
+    console.error('Error al añadir a favoritos:', error);
+    return false;
+  }
+}
+
+// Función para eliminar un producto de favoritos
+export async function removeFromFavorites(favoriteId: string): Promise<boolean> {
+  try {
+    console.log(`GraphQL: Eliminando favorito con ID ${favoriteId}`);
+    
+    const result = await graphqlRequest(REMOVE_FROM_FAVORITE, { documentId: favoriteId });
+    
+    if (result?.data?.deleteFavorite?.documentId) {
+      console.log('Producto eliminado de favoritos con éxito');
+      return true;
+    }
+    
+    console.warn('No se pudo eliminar el producto de favoritos');
+    return false;
+  } catch (error) {
+    console.error('Error al eliminar de favoritos:', error);
+    return false;
+  }
+}
+
+// Función para verificar si un producto está en favoritos
+export async function checkProductInFavorites(userId: string, productId: string): Promise<string | null> {
+  try {
+    console.log(`GraphQL: Verificando si el producto ${productId} está en favoritos del usuario ${userId}`);
+    
+    // Llamamos a la consulta sin parámetros para evitar errores
+    const result = await graphqlRequest(CHECK_PRODUCT_IN_FAVORITES);
+    
+    if (result?.data?.favorites && Array.isArray(result.data.favorites)) {
+      // Utilizamos la estructura simple
+      const favorite = result.data.favorites.find((fav: any) => 
+        fav.products && fav.products.some((p: any) => p.documentId === productId)
+      );
+      
+      if (favorite) {
+        console.log(`El producto está en favoritos con ID: ${favorite.documentId}`);
+        return favorite.documentId;
+      }
+    }
+    
+    console.log('El producto no está en favoritos');
+    return null;
+  } catch (error) {
+    console.error('Error al verificar favorito:', error);
+    return null;
   }
 }

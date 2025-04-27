@@ -113,6 +113,12 @@
     "views": {
       "type": "integer",
       "default": 0
+    },
+    "favorites": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::favorite.favorite",
+      "mappedBy": "products"
     }
   }
 }

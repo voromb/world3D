@@ -119,3 +119,58 @@ export const UPDATE_PRODUCT_RATING = gql`
     }
   }
 `;
+
+// Consultas y mutaciones para productos favoritos
+export const GET_USER_FAVORITES = gql`
+  query GetUserFavorites {
+    favorites(pagination: {limit: 100}) {
+      documentId
+      products {
+        documentId
+        slug
+        productName
+        description
+        price
+        images {
+          url
+          alternativeText
+        }
+        averageRating
+      }
+    }
+  }
+`;
+
+export const ADD_TO_FAVORITE = gql`
+  mutation AddToFavorite($userId: ID!, $productId: ID!) {
+    createFavorite(
+      data: {
+        users_permissions_user: $userId
+        products: [$productId]
+      }
+    ) {
+      documentId
+    }
+  }
+`;
+
+export const REMOVE_FROM_FAVORITE = gql`
+  mutation RemoveFromFavorite($documentId: ID!) {
+    deleteFavorite(
+      documentId: $documentId
+    ) {
+      documentId
+    }
+  }
+`;
+
+export const CHECK_PRODUCT_IN_FAVORITES = gql`
+  query CheckProductInFavorites {
+    favorites(pagination: {limit: 100}) {
+      documentId
+      products {
+        documentId
+      }
+    }
+  }
+`;

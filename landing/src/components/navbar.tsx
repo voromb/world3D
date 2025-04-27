@@ -1,3 +1,5 @@
+//src/components/navbar.tsx
+
 "use client";
 
 import { ShoppingCart, Heart, User } from "lucide-react";
