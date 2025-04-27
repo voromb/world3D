@@ -3,22 +3,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findProductBySlugOrId } from "@/lib/graphql/utils";
 
-export async function GET(
-  request: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function GET(request: NextRequest) {
   try {
-    // Acceder a los parámetros de forma asíncrona
-    const params = await Promise.resolve(context.params);
+    // Extraer el ID de la URL
+    const productId = request.nextUrl.pathname.split('/').pop()?.replace(/\/count$/, '');
 
-    if (!params || !params.id) {
+    if (!productId) {
       return NextResponse.json(
         { error: "Se requiere un identificador de producto válido" },
         { status: 400 }
       );
     }
-
-    const productId = params.id;
 
     // Usar la función compartida para buscar el producto
     const productData = await findProductBySlugOrId(productId);

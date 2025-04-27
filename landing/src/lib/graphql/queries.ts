@@ -1,24 +1,37 @@
 //src/app/lib/graphql/queries.ts
 
-import { gql } from 'graphql-request';
+import { gql } from '@apollo/client';
 
-// Consultas para productos - Esquema correcto confirmado
+// Consultas para productos - Estructura correcta para Strapi v5
 export const FIND_PRODUCT_BY_SLUG = gql`
-  query FindProductBySlug($slug: String!) {
-    products(filters: {slug: {eq: $slug}}, pagination: { limit: 1 }) {
+query FindProductBySlug($slug: String!) {
+  products(filters: {slug: {eq: $slug}}, pagination: {limit: 1}) {
+    documentId
+    slug
+    productName
+    views
+    averageRating
+    totalRatings
+  }
+}
+`;
+
+export const FIND_PRODUCT_BY_ID = gql`
+  query FindProductById($id: ID!) {
+    products(filters: {id: {eq: $id}}, pagination: { limit: 1 }) {
       documentId
-      slug
       productName
       views
       averageRating
       totalRatings
+      slug
     }
   }
 `;
 
-export const FIND_PRODUCT_BY_ID = gql`
-  query GetProduct($documentId: ID!) {
-    products(filters: {documentId: {eq: $documentId}}, pagination: { limit: 1 }) {
+export const FIND_PRODUCT_BY_DOCUMENT_ID = gql`
+  query FindProductByDocumentId($documentId: String!) {
+    products(filters: {documentId: {eq: $documentId}}) {
       documentId
       productName
       views
@@ -42,9 +55,23 @@ export const GET_ALL_PRODUCTS = gql`
 // Consulta para obtener todas las valoraciones de un producto
 export const GET_PRODUCT_RATINGS = gql`
   query GetProductRatings($productId: ID!) {
-    productRatings(filters: {products: {documentId: {eq: $productId}}}) {
-      documentId
-      rating
+    productRatings(filters: {product: {documentId: {eq: $productId}}}) {
+      data {
+        id
+        attributes {
+          rating
+          createdAt
+          product {
+            data {
+              id
+              attributes {
+                documentId
+                productName
+              }
+            }
+          }
+        }
+      }
     }
   }
 `;
@@ -53,7 +80,7 @@ export const GET_PRODUCT_RATINGS = gql`
 export const UPDATE_PRODUCT_VIEWS = gql`
   mutation UpdateProductViews($documentId: ID!, $views: Int!) {
     updateProduct(
-      documentId: $documentId,
+      documentId: $documentId
       data: {
         views: $views
       }
@@ -69,14 +96,12 @@ export const CREATE_RATING = gql`
     createProductRating(
       data: {
         rating: $rating
-        products: [$productId]
+        views: 0
+        product: { connect: [ { id: $productId } ] }
       }
     ) {
-      documentId
-      rating
-      products {
-        documentId
-        productName
+      data {
+        id
       }
     }
   }
@@ -85,16 +110,21 @@ export const CREATE_RATING = gql`
 export const UPDATE_PRODUCT_RATING = gql`
   mutation UpdateProductRating($documentId: ID!, $averageRating: Float!, $totalRatings: Int!) {
     updateProduct(
-      documentId: $documentId,
+      documentId: $documentId
       data: {
         averageRating: $averageRating
         totalRatings: $totalRatings
       }
     ) {
-      documentId
-      productName
-      averageRating
-      totalRatings
+      data {
+        id
+        attributes {
+          documentId
+          productName
+          averageRating
+          totalRatings
+        }
+      }
     }
   }
 `;

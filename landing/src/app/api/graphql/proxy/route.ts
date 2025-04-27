@@ -15,22 +15,38 @@ export async function POST(request: NextRequest) {
     console.log(`Proxy GraphQL: reenviando petición a ${strapiGraphQLUrl}`);
     console.log('Contenido:', JSON.stringify(body, null, 2));
     
+    // Determinar si es una mutación
+    const isMutation = body.query?.toLowerCase().includes('mutation');
+    console.log(`Proxy GraphQL: Tipo de operación: ${isMutation ? 'MUTACIÓN' : 'CONSULTA'}`);
+    
+    // Forzar el Content-Type correcto y asegurar la transmisión correcta
+    const bodyContent = JSON.stringify(body);
+    console.log(`Proxy GraphQL: Enviando body: ${bodyContent}`);
+    
     // Enviar la petición al servidor Strapi
     const strapiResponse = await fetch(strapiGraphQLUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'X-Request-ID': `${Date.now()}-${Math.random()}`,
         // Podemos añadir cabeceras de autorización aquí si es necesario
         // 'Authorization': `Bearer ${process.env.STRAPI_TOKEN}`
       },
-      body: JSON.stringify(body)
+      body: bodyContent,
+      cache: 'no-store'
     });
 
     // Obtener la respuesta como JSON
     const data = await strapiResponse.json();
     
-    console.log('Proxy GraphQL: respuesta recibida');
+    console.log('Proxy GraphQL: respuesta recibida:');
+    console.log(JSON.stringify(data, null, 2));
+    
+    // Verificar si hay errores en la respuesta
+    if (data.errors) {
+      console.error('Proxy GraphQL: La respuesta contiene errores:', data.errors);
+    }
     
     // Devolver la respuesta al cliente
     return NextResponse.json(data, {

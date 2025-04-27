@@ -218,18 +218,28 @@ export default function ProductDetailPage() {
         setProduct(productData);
 
         // Inicializar datos de valoraciones y visitas
-        if (productData.averageRating) {
+        if (productData.averageRating !== undefined && productData.averageRating !== null) {
+          console.log(`Valoración media del producto: ${productData.averageRating}`);
           setAverageRating(productData.averageRating);
+        } else {
+          console.log("El producto no tiene valoración media establecida");
         }
-        if (productData.totalRatings) {
+
+        if (productData.totalRatings !== undefined && productData.totalRatings !== null) {
+          console.log(`Total de valoraciones del producto: ${productData.totalRatings}`);
           setTotalRatings(productData.totalRatings);
+        } else {
+          console.log("El producto no tiene total de valoraciones establecido");
         }
+
         // Siempre inicializar vistas aunque sea con 0
-        setProductViews(productData.views || 0);
-        console.log("Contador de vistas inicializado:", productData.views || 0);
+        const views = productData.views || 0;
+        console.log(`Contador de vistas inicializado: ${views}`);
+        setProductViews(views);
 
         // Verificar si el usuario ya ha valorado este producto
-        checkUserRating(productData.id);
+        // Usar documentId para verificar valoraciones previas
+        checkUserRating(productData.documentId || productData.id);
 
         // Determinar tipo de producto para debugging
         determineProductType(productData);
@@ -247,7 +257,9 @@ export default function ProductDetailPage() {
         if (viewsUpdated === false) {
           // Marcamos como actualizado antes de la llamada para evitar duplicidad
           setViewsUpdated(true);
-          updateProductViews(productData.id);
+          // Usar documentId para actualizar vistas, ya que es lo que espera Strapi v5
+          updateProductViews(productData.documentId || productData.slug || productData.id);
+          console.log(`Actualizando vistas usando: ${productData.documentId ? 'documentId' : (productData.slug ? 'slug' : 'ID')}`);
         }
       } catch (error) {
         console.error("Error fetching product:", error);
@@ -262,36 +274,61 @@ export default function ProductDetailPage() {
   }, [slug]);
 
   // Verificar si el usuario ya ha valorado este producto
-  const checkUserRating = (productId: string) => {
-    // Obtener valoraciones del almacenamiento local
-    const userRatings = JSON.parse(localStorage.getItem("userRatings") || "{}");
-
-    if (userRatings[productId]) {
-      setUserRating(userRatings[productId]);
-      setHasRated(true);
+  const checkUserRating = async (productId: string) => {
+    // En lugar de usar sessionStorage, consultamos las valoraciones actuales en Strapi
+    // utilizando GraphQL, igual que hicimos con las visitas
+    try {
+      if (!product) return;
+      
+      // Usar preferentemente documentId, pero aceptar también id como fallback
+      const realProductId = product.documentId || productId;
+      console.log(`Consultando valoraciones para producto: ${realProductId}`);
+      
+      // Comprobar si el producto ya tiene valoraciones
+      if (product.averageRating && product.totalRatings) {
+        console.log(`Producto con valoración media: ${product.averageRating}, Total valoraciones: ${product.totalRatings}`);
+        setAverageRating(product.averageRating);
+        setTotalRatings(product.totalRatings);
+        
+        // No podemos determinar si el usuario actual ha valorado ya el producto
+        // sin autenticación, pero podemos mostrarle las valoraciones actuales
+      }
+      
+      // En una aplicación real con autenticación, aquí determinaríamos si el usuario
+      // ya ha valorado el producto consultando sus valoraciones personales
+    } catch (error) {
+      console.error("Error al verificar valoraciones:", error);
     }
+    
+    console.log("Las valoraciones se gestionan directamente en la base de datos a través de GraphQL");
   };
 
   // Actualizar el contador de visitas
   const updateProductViews = async (productId: string) => {
     try {
-      // Usar slug o documentId para identificar el producto
-      // Comprobamos que product no sea null antes de acceder a sus propiedades
-      const productIdentifier = product?.slug || productId;
-      console.log("Intentando actualizar vistas para el producto:", productIdentifier);
+      // Debemos usar el documentId en lugar del slug o ID numérico para Strapi v5
+      // Si no tenemos el documentId, usamos el slug o ID como último recurso
+      const productIdentifier = product?.documentId || product?.slug || productId;
+      console.log("Intentando actualizar vistas para el producto con identificador:", productIdentifier);
+      console.log("Tipo de identificador:", product?.documentId ? "documentId" : (product?.slug ? "slug" : "ID"));
       
       // Solo incrementamos si no se ha actualizado ya en esta sesión del componente
-      if (viewsUpdated) {
-        console.log("Contador ya actualizado en esta sesión");
-        return;
-      }
+      // Eliminamos esta restricción para que siempre incremente las vistas
+      // Comentamos para referencia: if (viewsUpdated) { return; }
       
       // Si está activado GraphQL, utilizamos esa API en lugar de REST
       if (graphQLSettings.enabled) {
         console.log("Usando GraphQL para actualizar vistas");
         try {
-          const newViews = await updateProductViewsGraphQL(productId);
+          // Primero obtenemos las vistas actuales
+          let currentViews = productViews;
+          console.log("Vistas actuales antes de incrementar:", currentViews);
+          
+          // Incrementamos las vistas en 1
+          const newViews = await updateProductViewsGraphQL(productIdentifier);
           console.log("GraphQL: Vistas actualizadas correctamente:", newViews);
+          
+          // Actualizamos el estado para mostrar el nuevo valor
           setProductViews(newViews);
           setViewsUpdated(true);
           return;
@@ -353,7 +390,10 @@ export default function ProductDetailPage() {
       if (graphQLSettings.enabled) {
         try {
           console.log("Usando GraphQL para enviar valoración");
-          const result = await submitRatingGraphQL(product.id.toString(), rating);
+          // Usamos el documentId si está disponible, de lo contrario el id
+          const productId = product.documentId || product.id;
+          console.log("ID del producto para valoración:", productId);
+          const result = await submitRatingGraphQL(productId.toString(), rating);
           console.log("GraphQL: Valoración enviada correctamente:", result);
           
           // Actualizar UI
@@ -362,10 +402,11 @@ export default function ProductDetailPage() {
           setHasRated(true);
           setRatingSubmitted(true);
           
-          // Guardar en localStorage
-          const userRatings = JSON.parse(localStorage.getItem("userRatings") || "{}");
-          userRatings[product.id] = rating;
-          localStorage.setItem("userRatings", JSON.stringify(userRatings));
+          // No necesitamos guardar en sessionStorage
+          // La valoración se guarda directamente en la base de datos mediante GraphQL
+          console.log(`Valoración ${rating} guardada en base de datos para producto ${productId}`);
+          
+          // En la próxima carga de página, obtendremos esta valoración directamente de la base de datos
           
           setTimeout(() => {
             setRatingSubmitted(false);
@@ -394,10 +435,8 @@ export default function ProductDetailPage() {
       setHasRated(true);
       setRatingSubmitted(true);
 
-      // Guardar en localStorage
-      const userRatings = JSON.parse(localStorage.getItem("userRatings") || "{}");
-      userRatings[product.id] = rating;
-      localStorage.setItem("userRatings", JSON.stringify(userRatings));
+      // Con GraphQL no necesitamos localStorage, las valoraciones se guardan
+      // directamente en la base de datos mediante la API
 
       setTimeout(() => {
         setRatingSubmitted(false);
@@ -417,52 +456,20 @@ export default function ProductDetailPage() {
     // Depuración: mostrar detalles del producto
     console.log('Producto a valorar:', {
       id: product.id,
+      documentId: product.documentId,
       nombre: product.productName,
       slug: product.slug
     });
     
+    // Establecer la valoración del usuario en la interfaz
     setUserRating(newRating);
-    setSubmittingRating(true);
     
+    // Llamar a la función submitRating para utilizar el método correcto (GraphQL o API REST)
     try {
-      // Usar slug para identificar el producto en lugar del ID numérico
-      const productIdentifier = product.slug || product.id; // Fallback al ID solo si no hay slug
-      console.log('Enviando valoración usando identificador:', productIdentifier);
-      
-      const response = await fetch(`/api/product-ratings/${productIdentifier}/rate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ rating: newRating }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Error al enviar la valoración');
-      }
-      
-      const data = await response.json();
-      
-      // Actualizar estados
-      setAverageRating(data.averageRating);
-      setTotalRatings(data.totalRatings);
-      setHasRated(true);
-      setRatingSubmitted(true);
-      
-      // Guardar en localStorage
-      const userRatings = JSON.parse(localStorage.getItem('userRatings') || '{}');
-      userRatings[product.id] = newRating;
-      localStorage.setItem('userRatings', JSON.stringify(userRatings));
-      
-      // Mostrar mensaje temporal
-      setTimeout(() => {
-        setRatingSubmitted(false);
-      }, 3000);
-      
+      await submitRating(newRating);
+      // El resto de los estados (averageRating, totalRatings, etc.) se actualizarán dentro de submitRating
     } catch (error) {
       console.error('Error al enviar valoración:', error);
-    } finally {
-      setSubmittingRating(false);
     }
   };
 

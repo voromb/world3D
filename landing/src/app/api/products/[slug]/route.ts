@@ -2,13 +2,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(
-  request: NextRequest,
-  context: { params: { slug: string } }
-) {
-  // Acceder a los parámetros de forma asíncrona
-  const params = await Promise.resolve(context.params);
-  const slug = params.slug;
+export async function GET(request: NextRequest) {
+  // Extraer el slug directamente de la URL
+  const slug = request.nextUrl.pathname.split('/').pop()?.replace(/\/route$/, '');
 
   try {
     const res = await fetch(

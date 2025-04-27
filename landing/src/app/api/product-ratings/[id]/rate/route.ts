@@ -1,19 +1,14 @@
 // src/app/api/product-ratings/[id]/rate/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import { updateProductViewsGraphQL, submitRatingGraphQL, ID_TO_SLUG_MAP } from "@/lib/graphql";
+import { submitRatingGraphQL, ID_TO_SLUG_MAP } from "@/lib/graphql";
 
-export async function POST(
-  request: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function POST(request: NextRequest) {
+  // Obtenemos el id de la URL
+  const idFromUrl = request.nextUrl.pathname.split('/').pop()?.replace(/\/rate$/, '');
   try {
     // Extraemos la valoración de la solicitud
     const { rating } = await request.json();
-
-    // Esperamos los parámetros dinámicos (requerido en Next.js 14+)
-    const params = await Promise.resolve(context.params);
-    const idFromUrl = params.id;
 
     if (!idFromUrl) {
       return NextResponse.json(

@@ -24,6 +24,9 @@ export type ProductType = {
   directionName: string;
   latitud: number;
   longitud: number;
+  views?: number;
+  averageRating?: number;
+  totalRatings?: number;
   images: {
     id: number;
     documentId: string;

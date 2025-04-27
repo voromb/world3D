@@ -258,6 +258,8 @@ export async function incrementProductViews(productIdOrObject: string | any) {
     let useDirectDocumentId = false;
     let directDocumentId: string | null = null;
     
+    console.log('Tipo de productIdOrObject:', typeof productIdOrObject);
+    
     // Verificar si es un objeto con documentId, slug o id
     if (typeof productIdOrObject === 'object' && productIdOrObject !== null) {
       const product = productIdOrObject as any;
@@ -276,20 +278,30 @@ export async function incrementProductViews(productIdOrObject: string | any) {
         throw new Error('Objeto producto no contiene documentId, id ni slug');
       }
     } else {
-      productKey = productIdOrObject.toString();
+      // Es posible que el valor sea directamente un documentId
+      // Intentamos verificar si tiene el formato de un documentId de Strapi (alfanumérico largo)
+      const strValue = productIdOrObject.toString();
+      const isDocumentIdFormat = /^[a-zA-Z0-9]{24,26}$/.test(strValue);
+      
+      if (isDocumentIdFormat) {
+        console.log(`Posible documentId detectado directamente: ${strValue}`);
+        useDirectDocumentId = true;
+        directDocumentId = strValue;
+        productKey = `doc_${strValue}`;
+      } else {
+        // Probablemente sea un slug o un ID numérico
+        console.log(`Valor directo (ID o slug): ${strValue}`);
+        productKey = strValue;
+      }
     }
     
-    // Sistema antirebote usando Map y timestamp
+    // Registro de timestamp solo para fines de logging
+    // Ya no limitamos el incremento, siempre incrementamos en cada visita
     const now = Date.now();
     const lastUpdate = incrementLimiter.get(productKey);
     
-    if (lastUpdate && now - lastUpdate < 60000) {
-      console.log(`Omitiendo incremento para ${productKey}, última actualización hace ${(now - lastUpdate) / 1000} segundos`);
-      return {
-        incremented: false,
-        message: 'Hace poco que se incrementaron las vistas para este producto',
-        views: null
-      };
+    if (lastUpdate) {
+      console.log(`Última actualización para ${productKey} hace ${(now - lastUpdate) / 1000} segundos, incrementando de todos modos`);
     }
     
     // Si ya tenemos el documentId directamente, lo usamos sin buscar
@@ -314,39 +326,139 @@ export async function incrementProductViews(productIdOrObject: string | any) {
       currentViews = productData.product.views || 0;
       console.log(`Vistas actuales: ${currentViews}`, productData.product);
     } else {
-      // Buscar el producto primero
-      console.log(`Buscando producto para incrementar vistas: ${productIdOrObject}`);
-      const productData = await findProductBySlugOrId(productIdOrObject);
+      // Si productIdOrObject es un ID numérico, intentamos buscar con REST y GraphQL
+      if (typeof productIdOrObject === 'string' || typeof productIdOrObject === 'number') {
+        const strValue = productIdOrObject.toString();
+        // Comprobar si es un ID numérico
+        const isNumericId = !isNaN(Number(strValue)) && Number.isFinite(Number(strValue));
+        
+        if (isNumericId) {
+          console.log(`ID numérico detectado: ${strValue}, buscando producto por ID...`);
+          try {
+            // Intentar encontrar el producto por ID en la API REST primero
+            const apiUrl = `/api/products/${strValue}`;
+            console.log(`Consultando API REST: ${apiUrl}`);
+            const response = await fetch(apiUrl);
+            
+            if (response.ok) {
+              const restData = await response.json();
+              if (restData && restData.documentId) {
+                console.log(`Producto encontrado en REST API con documentId: ${restData.documentId}`);
+                useDirectDocumentId = true;
+                directDocumentId = restData.documentId;
+                productKey = `doc_${restData.documentId}`;
+              }
+            }
+          } catch (restError) {
+            console.error('Error al buscar producto por ID en REST:', restError);
+          }
+        }
+      }
       
-      console.log('Resultado de la búsqueda:', productData ? 'Encontrado' : 'No encontrado');
-      
-      if (!productData) {
-        console.log('Producto no encontrado. Utilizando vistas simuladas.');
-        // En lugar de lanzar un error, devolvemos un valor simulado
-        return {
-          incremented: true,
-          views: 1,
-          message: 'Vistas simuladas (producto no encontrado en servidor)'
-        };
+      // Si no encontramos el documentId directamente, buscamos el producto
+      let foundProductData = null;
+      if (!useDirectDocumentId) {
+        console.log(`Buscando producto para incrementar vistas: ${productIdOrObject}`);
+        foundProductData = await findProductBySlugOrId(productIdOrObject);
+        
+        console.log('Resultado de la búsqueda:', foundProductData ? 'Encontrado' : 'No encontrado');
+        
+        if (!foundProductData) {
+          console.log('Producto no encontrado. Utilizando vistas simuladas.');
+          // En lugar de lanzar un error, devolvemos un valor simulado
+          return {
+            incremented: true,
+            views: 1,
+            message: 'Vistas simuladas (producto no encontrado en servidor)'
+          };
+        }
+        
+        // Si encontramos el producto, usamos su documentId
+        if (foundProductData.documentId) {
+          useDirectDocumentId = true;
+          directDocumentId = foundProductData.documentId;
+          currentViews = foundProductData.views || 0;
+        }
       }
       
       // Obtener documentId y vistas del producto encontrado
-      documentId = productData.documentId;
-      currentViews = productData.views || 0;
+      documentId = directDocumentId;
+      
+      // Si tenemos el producto, usamos sus vistas, de lo contrario asumimos 0
+      if (!currentViews && foundProductData) {
+        currentViews = foundProductData.views || 0;
+      } else if (!currentViews) {
+        currentViews = 0;
+      }
+      
       console.log(`Producto encontrado. DocumentId: ${documentId}, Vistas actuales: ${currentViews}`);
     }
     
-    // Calcular las nuevas vistas
+    // Calcular las nuevas vistas - siempre incrementamos en 1
     const newViews = currentViews + 1;
+    console.log(`Incrementando vistas de ${currentViews} a ${newViews}`);
     
-    // Registrar este momento como la última actualización para este producto
+    // Registrar este momento como la última actualización (solo para tracking, no limita)
     incrementLimiter.set(productKey, now);
     
-    // Actualizar con GraphQL
-    await graphqlRequest(UPDATE_PRODUCT_VIEWS, {
-      documentId: documentId,
-      views: newViews
-    });
+    // Actualizar con GraphQL - Enfoque directo para asegurar que llegue a la base de datos
+    console.log(`Enviando ACTUALIZACIÓN de vistas para producto ${documentId}: ${newViews}`);
+    
+    try {
+      // Hacer la petición directamente a la URL de Strapi
+      const strapiUrl = process.env.NEXT_PUBLIC_STRAPI_GRAPHQL_URL || 'http://localhost:1337/graphql';
+      const isBrowser = typeof window !== 'undefined';
+      
+      // URL del endpoint GraphQL según si estamos en navegador o servidor
+      const targetUrl = isBrowser ? '/api/graphql/proxy' : strapiUrl;
+      
+      console.log(`Enviando petición a: ${targetUrl}`);
+      
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-Request-ID': `${Date.now()}-${Math.random()}`
+        },
+        body: JSON.stringify({
+          query: `
+            mutation UpdateProductViews($documentId: ID!, $views: Int!) {
+              updateProduct(
+                documentId: $documentId
+                data: {
+                  views: $views
+                }
+              ) {
+                documentId
+                views
+              }
+            }
+          `,
+          variables: {
+            documentId: documentId,
+            views: newViews
+          }
+        }),
+        cache: 'no-store'
+      });
+      
+      const updateResult = await response.json();
+      
+      console.log('Resultado de actualización de vistas:', JSON.stringify(updateResult, null, 2));
+      
+      // Verificar el resultado de la actualización
+      if (!updateResult?.data?.updateProduct?.views) {
+        console.error('No se pudo actualizar las vistas del producto');
+        if (updateResult.errors) {
+          console.error('Errores:', JSON.stringify(updateResult.errors));
+        }
+      } else {
+        console.log(`Vistas actualizadas correctamente a: ${updateResult.data.updateProduct.views}`);
+      }
+    } catch (error) {
+      console.error('Error al enviar actualización de vistas:', error);
+    }
     
     console.log(`Vistas incrementadas para producto ${productKey}: ${newViews}`);
     

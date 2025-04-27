@@ -94,6 +94,9 @@ export type ProductType = {
   directionName: string | null;
   latitud: number | null;
   longitud: number | null;
+  views?: number; // Número de vistas del producto
+  averageRating?: number; // Valoración media del producto
+  totalRatings?: number; // Número total de valoraciones
   // Relaciones: Asume que son arrays de los tipos definidos arriba
   images: ProductImageType[];
   categories: ProductCategoryType[];

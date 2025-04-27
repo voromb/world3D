@@ -6,14 +6,10 @@ import {
   findProductBySlugOrId,
 } from "@/lib/graphql/utils";
 
-export async function POST(
-  request: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function POST(request: NextRequest) {
   try {
-    // Esperamos los parámetros dinámicos (requerido en Next.js 14+)
-    const params = await Promise.resolve(context.params);
-    const idFromUrl = params.id;
+    // Extraer el ID de la URL
+    const idFromUrl = request.nextUrl.pathname.split('/').pop()?.replace(/\/increment$/, '') || '';
 
     // Mapeo de IDs numéricos a slugs - extraido del frontend
     const ID_TO_SLUG_MAP: Record<string, string> = {

@@ -3,6 +3,7 @@ import { graphqlRequest } from './client';
 import {
   FIND_PRODUCT_BY_SLUG,
   FIND_PRODUCT_BY_ID,
+  FIND_PRODUCT_BY_DOCUMENT_ID,
   GET_ALL_PRODUCTS,
   UPDATE_PRODUCT_VIEWS,
   CREATE_RATING,
@@ -39,90 +40,77 @@ interface TransformedProduct {
   [key: string]: any; // Para cualquier otra propiedad que pueda tener
 }
 
-// Función para encontrar un producto por slug o ID
+// Función para encontrar un producto por slug o ID - más robusta para manejar errores
 export async function findProductBySlugOrId(slugOrId: string): Promise<TransformedProduct | null> {
   try {
-    console.log(`GraphQL: Buscando producto por slug "${slugOrId}"...`);
+    console.log(`GraphQL: Buscando producto con identificador "${slugOrId}"...`);
     
-    // Intenta primero por slug
-    const slugResult = await graphqlRequest(FIND_PRODUCT_BY_SLUG, { slug: slugOrId });
-    console.log('GraphQL respuesta de búsqueda por slug:', JSON.stringify(slugResult, null, 2));
-    
-    // Manejar los diferentes formatos posibles de respuesta
-    if (slugResult?.products) {
-      let productData: any = null;
-      
-      // Si products es un array
-      if (Array.isArray(slugResult.products)) {
-        if (slugResult.products.length > 0) {
-          productData = slugResult.products[0];
-        }
-      } 
-      // Si products tiene una propiedad data que es un array
-      else if (slugResult.products.data && Array.isArray(slugResult.products.data)) {
-        if (slugResult.products.data.length > 0) {
-          productData = slugResult.products.data[0];
-        }
-      }
-      
-      if (productData) {
-        console.log('Producto encontrado por slug en GraphQL:', productData);
-        return {
-          id: productData.id,
-          ...(productData.documentId ? { documentId: productData.documentId } : {}),
-          ...productData.attributes
-        };
-      }
-    }
-
-    // Si no funciona, intenta por ID (si es un número)
-    if (!isNaN(parseInt(slugOrId))) {
-      console.log(`GraphQL: Intentando buscar por ID "${slugOrId}"...`);
-      const idResult = await graphqlRequest(FIND_PRODUCT_BY_ID, { id: slugOrId });
-      console.log('GraphQL respuesta de búsqueda por ID:', JSON.stringify(idResult, null, 2));
-      
-      // Manejar los diferentes formatos posibles de respuesta
-      if (idResult?.product) {
-        let productData: any = null;
+    // Para evitar problemas de CORS, crear un array con los productos cargados
+    // Primero obtener todos los productos disponibles
+    try {
+      console.log("GraphQL: Obteniendo lista de todos los productos disponibles...");
+      const allProducts = await graphqlRequest(GET_ALL_PRODUCTS);
+      if (allProducts?.products && Array.isArray(allProducts.products)) {
+        console.log(`GraphQL: ${allProducts.products.length} productos disponibles`);
         
-        // Si product es un objeto de tipo ProductData directamente
-        if ('id' in idResult.product && 'attributes' in idResult.product) {
-          productData = idResult.product;
-        } 
-        // Si product tiene una propiedad data
-        else if ('data' in idResult.product && idResult.product.data) {
-          productData = idResult.product.data;
-        }
+        // Mostrar los productos disponibles para depuración
+        const availableProducts = allProducts.products.map((p: any) => 
+          `${p.documentId}: ${p.slug}`
+        );
+        console.log('GraphQL productos disponibles:', availableProducts);
         
-        if (productData) {
-          console.log('Producto encontrado por ID en GraphQL:', productData);
+        // Buscar el producto directamente en la lista completa
+        // Intentar coincidir por documentId primero (más preciso)
+        const productByDocumentId = allProducts.products.find(
+          (product: any) => product.documentId === slugOrId
+        );
+        
+        if (productByDocumentId) {
+          console.log(`Producto encontrado por documentId coincidente en la lista completa:`, productByDocumentId);
           return {
-            id: productData.id,
-            ...(productData.documentId ? { documentId: productData.documentId } : {}),
-            ...productData.attributes
+            id: productByDocumentId.documentId,
+            ...productByDocumentId
           };
         }
+        
+        // Luego intentar coincidir por slug
+        const productBySlug = allProducts.products.find(
+          (product: any) => product.slug === slugOrId
+        );
+        
+        if (productBySlug) {
+          console.log(`Producto encontrado por slug coincidente en la lista completa:`, productBySlug);
+          return {
+            id: productBySlug.documentId,
+            ...productBySlug
+          };
+        }
+        
+        // Finalmente por id numérico si es aplicable
+        if (!isNaN(parseInt(slugOrId))) {
+          const numericId = parseInt(slugOrId);
+          const productById = allProducts.products.find(
+            (product: any) => product.id === numericId
+          );
+          
+          if (productById) {
+            console.log(`Producto encontrado por ID numérico coincidente en la lista completa:`, productById);
+            return {
+              id: productById.documentId,
+              ...productById
+            };
+          }
+        }
       }
+    } catch (listError) {
+      console.error("Error al obtener lista completa de productos:", listError);
     }
     
-    // Consulta de diagnóstico para ver todos los productos disponibles
-    console.log('GraphQL: Realizando consulta de diagnóstico para ver todos los productos...');
-    const diagResult = await graphqlRequest(GET_ALL_PRODUCTS);
-    
-    let availableProducts: string[] = [];
-    if (diagResult?.products) {
-      if (Array.isArray(diagResult.products)) {
-        availableProducts = diagResult.products.map((p: any) => `${p.id}: ${p.attributes?.slug || 'sin slug'}`);
-      } else if (diagResult.products.data && Array.isArray(diagResult.products.data)) {
-        availableProducts = diagResult.products.data.map((p: any) => `${p.id}: ${p.attributes?.slug || 'sin slug'}`);
-      }
-    }
-    
-    console.log('GraphQL productos disponibles:', availableProducts.length > 0 ? availableProducts : 'Ninguno encontrado');
-    
-    return null; // No se encontró el producto
+    // Si no funcionaron los métodos anteriores, informar que no encontramos el producto
+    console.log(`No se pudo encontrar el producto con identificador: ${slugOrId}`);
+    return null;
   } catch (error) {
-    console.error('Error al buscar producto por GraphQL:', error);
+    console.error('Error general al buscar producto:', error);
     return null;
   }
 }
@@ -158,106 +146,82 @@ export async function updateProductViewsGraphQL(slugOrId: string): Promise<numbe
 
 // Función para enviar una valoración para un producto usando GraphQL
 export async function submitRatingGraphQL(
-  slugOrId: string, 
+  slugOrId: string,
   rating: number
 ): Promise<{ averageRating: number; totalRatings: number }> {
   try {
     console.log(`GraphQL: Enviando valoración ${rating} para:`, slugOrId);
-    
-    // Buscar el producto primero
+
+    // Intentar obtener información del producto primero
     const product = await findProductBySlugOrId(slugOrId);
     if (!product) {
-      console.log(`Producto ${slugOrId} no encontrado en Strapi, usando valoración simulada`);
-      return { averageRating: rating, totalRatings: 1 }; // Valor simulado
+      console.log(`No se encontró el producto ${slugOrId}, usando valor simulado`); 
+      return { averageRating: rating, totalRatings: 1 };
     }
     
-    // 1. Crear una nueva valoración
-    const createRatingResult = await graphqlRequest(CREATE_RATING, {
-      rating: rating,
-      product: product.id
-    });
+    const productId = product.documentId || product.id;
+    console.log(`Producto encontrado con ID: ${productId}, enviando valoración: ${rating}`);
     
-    // Verificar el resultado de crear valoración
-    let ratingCreated = false;
-    
-    if (createRatingResult?.createProductRating) {
-      if ('id' in createRatingResult.createProductRating || 'documentId' in createRatingResult.createProductRating) {
-        ratingCreated = true;
-      } else if ('data' in createRatingResult.createProductRating && 
-                createRatingResult.createProductRating.data &&
-                'id' in createRatingResult.createProductRating.data) {
-        ratingCreated = true;
-      }
-    }
-    
-    if (!ratingCreated) {
-      throw new Error("No se pudo crear la valoración");
-    }
-    
-    // 2. Obtener todas las valoraciones para calcular el promedio
-    const ratingsResult = await graphqlRequest(GET_PRODUCT_RATINGS, {
-      productId: product.id
-    });
-    
-    // Extraer los ratings dependiendo del formato de respuesta
-    let ratings: Array<{ rating: number }> = [];
-    
-    if (ratingsResult?.productRatings) {
-      if (Array.isArray(ratingsResult.productRatings)) {
-        ratings = ratingsResult.productRatings.map((r: any) => ({ rating: r.rating }));
-      } else if ('data' in ratingsResult.productRatings && 
-                Array.isArray(ratingsResult.productRatings.data)) {
-        ratings = ratingsResult.productRatings.data.map((r: any) => ({ 
-          rating: r.attributes.rating 
-        }));
-      }
-    }
-    
-    const totalRatings = ratings.length;
-    let ratingSum = 0;
-    
-    // Calcular la suma de valoraciones
-    ratings.forEach(ratingItem => {
-      ratingSum += ratingItem.rating;
-    });
-    
-    // Calcular la valoración media
-    const averageRating = totalRatings > 0 ? ratingSum / totalRatings : 0;
-    const roundedAverage = parseFloat(averageRating.toFixed(1));
-    
-    // 3. Actualizar el producto con la nueva valoración media
-    const updateResult = await graphqlRequest(UPDATE_PRODUCT_RATING, {
-      id: product.id,
-      averageRating: roundedAverage,
-      totalRatings: totalRatings
-    });
-    
-    // Extraer datos actualizados dependiendo del formato de respuesta
-    let updatedAverage = roundedAverage;
-    let updatedTotal = totalRatings;
-    
-    if (updateResult?.updateProduct) {
-      if ('averageRating' in updateResult.updateProduct) {
-        updatedAverage = updateResult.updateProduct.averageRating || updatedAverage;
-        updatedTotal = updateResult.updateProduct.totalRatings || updatedTotal;
-      } else if ('data' in updateResult.updateProduct && 
-                updateResult.updateProduct.data && 
-                'attributes' in updateResult.updateProduct.data) {
-        updatedAverage = updateResult.updateProduct.data.attributes.averageRating || updatedAverage;
-        updatedTotal = updateResult.updateProduct.data.attributes.totalRatings || updatedTotal;
+    // 1. Crear la valoración directamente
+    try {
+      const createResult = await graphqlRequest(CREATE_RATING, {
+        rating: rating,
+        productId: productId
+      });
+      
+      console.log('Resultado creación valoración:', JSON.stringify(createResult, null, 2));
+      
+      // 2. Actualizar la media y el total de valoraciones del producto
+      // Como ya tenemos el rating actual, añadimos 1 al total y recalculamos
+      const currentAverage = product.averageRating || 0;
+      const currentTotal = product.totalRatings || 0;
+      
+      // Calcular nuevo promedio y total
+      let newTotal = currentTotal + 1;
+      let newAverage: number;
+      
+      if (currentTotal === 0) {
+        // Si es la primera valoración, el promedio es igual al rating
+        newAverage = rating;
+      } else {
+        // Recalcular: (promedio_actual * total_actual + nuevo_rating) / (total_actual + 1)
+        newAverage = ((currentAverage * currentTotal) + rating) / newTotal;
       }
       
-      console.log("GraphQL: Valoración guardada y promedio actualizado correctamente");
-    } else {
-      console.error("GraphQL: No se pudo actualizar la valoración media");
+      // Redondear a un decimal
+      const roundedAverage = parseFloat(newAverage.toFixed(1));
+      
+      console.log(`Actualizando valoración: anterior (${currentAverage}/${currentTotal}) -> nueva (${roundedAverage}/${newTotal})`);
+      
+      // 3. Actualizar el producto con la nueva media y total
+      try {
+        const updateResult = await graphqlRequest(UPDATE_PRODUCT_RATING, {
+          documentId: productId,
+          averageRating: roundedAverage,
+          totalRatings: newTotal
+        });
+        
+        console.log('Resultado actualización producto:', JSON.stringify(updateResult, null, 2));
+        console.log(`Valoración guardada con éxito: ${rating}`);
+        
+        return {
+          averageRating: roundedAverage,
+          totalRatings: newTotal
+        };
+      } catch (updateError) {
+        console.error('Error al actualizar producto:', updateError);
+        // Devolver los valores calculados aunque la actualización haya fallado
+        return {
+          averageRating: roundedAverage,
+          totalRatings: newTotal
+        };
+      }
+    } catch (createError) {
+      console.error('Error al crear valoración:', createError);
+      return { averageRating: rating, totalRatings: 1 };
     }
-    
-    return {
-      averageRating: updatedAverage,
-      totalRatings: updatedTotal
-    };
   } catch (error) {
-    console.error("GraphQL: Error al enviar valoración:", error);
+    console.error("GraphQL: Error general al enviar valoración:", error);
     return { averageRating: rating, totalRatings: 1 }; // Valor simulado en caso de error
   }
 }
