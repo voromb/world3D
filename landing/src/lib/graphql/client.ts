@@ -7,13 +7,13 @@ const isBrowser = typeof window !== "undefined";
 
 // URL del servidor GraphQL de Strapi basada en variables de entorno
 // En el navegador, hacemos las peticiones a través de nuestra API interna para evitar problemas de CORS
-const STRAPI_GRAPHQL_URL = isBrowser
+export const STRAPI_GRAPHQL_URL = isBrowser
   ? "/api/graphql/proxy" // URL relativa para peticiones desde el navegador
   : process.env.NEXT_PUBLIC_STRAPI_GRAPHQL_URL ||
     "http://localhost:1337/graphql"; // URL completa para el servidor
 
 // URL absoluta completa para el servidor, usada para peticiones directas
-const FULL_STRAPI_GRAPHQL_URL = isBrowser
+export const FULL_STRAPI_GRAPHQL_URL = isBrowser
   ? new URL("/api/graphql/proxy", window.location.origin).toString() // URL absoluta para navegador
   : process.env.NEXT_PUBLIC_STRAPI_GRAPHQL_URL || "http://localhost:1337/graphql"; // URL para servidor
 
