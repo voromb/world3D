@@ -1,0 +1,1098 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { request } from 'graphql-request';
+import { FULL_STRAPI_GRAPHQL_URL } from '@/lib/graphql/client';
+import ImageUpload from '@/components/ui/ImageUpload';
+import Image from 'next/image';
+import {
+  GET_PRODUCTS_FOR_DASHBOARD,
+  CREATE_PRODUCT,
+  UPDATE_PRODUCT,
+  DELETE_PRODUCT,
+  generateSlug,
+  Product,
+  ProductInput
+} from '@/lib/graphql/product-crud';
+
+// Importación de componentes de UI
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+// Componente principal del dashboard de productos
+export default function ProductDashboard() {
+  // Estado para los productos
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Estado para la sesión del usuario
+  const { data: session } = useSession();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
+  const [currentProduct, setCurrentProduct] = useState<Product>({
+    documentId: '',
+    productName: '',
+    slug: '',
+    description: '',
+    price: 0,
+    views: 0,
+    active: false,
+    userId: '',
+    hasImages: false,
+    images: [],
+    isFeatured: false,
+    weight: 0,
+    dimensions: '',
+    dateManufactured: '',
+    remaininWarranty: '',
+    State: '',
+    cityName: '',
+    provinceName: '',
+    countryName: '',
+    directionName: '',
+    latitud: 0,
+    longitud: 0,
+    createdBy: '',
+    users_permissions_users: ''
+  });
+  
+  // Estado para las operaciones
+  const [operationLoading, setOperationLoading] = useState(false);
+  const [operationSuccess, setOperationSuccess] = useState<string | null>(null);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  
+  // Estado para el manejo de imágenes
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  
+  // Cargar productos al iniciar cuando hay sesión disponible
+  useEffect(() => {
+    if (session) {
+      fetchProducts();
+    }
+  }, [session]);
+  
+  // Función para filtrar productos del usuario actual
+  const fetchProducts = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const jwt = (session?.user as any)?.jwt;
+      const userId = (session?.user as any)?.id;
+      const username = (session?.user as any)?.username || (session?.user as any)?.email || '';
+      
+      if (!jwt || !userId) {
+        setError('No se encontró token de autenticación o ID de usuario.');
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log(`Obteniendo productos para el usuario ID: ${userId}, Usuario: ${username}`);
+      
+      // Hacer la petición a GraphQL directamente a la URL completa de Strapi
+      // Usamos FULL_STRAPI_GRAPHQL_URL que ya contiene la URL completa
+      const result: any = await request(FULL_STRAPI_GRAPHQL_URL, GET_PRODUCTS_FOR_DASHBOARD, {}, {
+        Authorization: `Bearer ${jwt}`,
+      });
+
+      console.log('Respuesta completa de la API:', result);
+      
+      // Verificar si hay una estructura de productos
+      if (result && result.products && Array.isArray(result.products)) {
+        // Mapear los productos a nuestro formato y extraer la información necesaria
+        let allProducts = result.products
+          .filter((product: any) => product) // Filtrar valores nulos
+          .map((product: any) => {
+            // Extraer información del usuario - ahora con los nuevos campos
+            const userInfo = product.users_permissions_users || {};
+            const productUserId = 
+                userInfo.id || 
+                (product.createdBy?.match(/\d+/) ? product.createdBy : '') || 
+                '';
+            
+            const productData = {
+              documentId: product.documentId || '',
+              productName: product.productName || '',
+              slug: product.slug || '',
+              description: product.description || '',
+              price: typeof product.price === 'number' ? product.price : 0,
+              views: product.views || 0,
+              active: product.active || false,
+              createdAt: product.createdAt || '',
+              createdBy: product.createdBy || '',
+              users_permissions_users: userInfo,
+              userId: productUserId, // ID del usuario que creó el producto
+              hasImages: Boolean(product.images && product.images.length > 0),
+              images: product.images || [],
+              isFeatured: product.isFeatured || false,
+              weight: product.weight || 0,
+              dimensions: product.dimensions || '',
+              dateManufactured: product.dateManufactured || '',
+              remaininWarranty: product.remaininWarranty || '',
+              State: product.State || '',
+              cityName: product.cityName || '',
+              provinceName: product.provinceName || '',
+              countryName: product.countryName || '',
+              directionName: product.directionName || '',
+              latitud: product.latitud || 0,
+              longitud: product.longitud || 0,
+              createdBy: product.createdBy || '',
+              users_permissions_users: product.users_permissions_users || ''
+            } as Product;
+            
+            return productData;
+          });
+        
+        console.log(`Total de productos recuperados: ${allProducts.length}`);
+        console.log(`ID del usuario actual: ${userId}`);
+        
+        // Primero mostramos todos para debugging
+        const filteredProducts = allProducts;
+        
+        // Imprimir información detallada para depuración
+        allProducts.forEach((product: Product) => {
+          console.log(`Producto: ${product.productName} (ID: ${product.documentId})`);          
+          console.log(`  - Creado por usuario: ${product.userId || 'No especificado'}`);          
+          console.log(`  - Tiene imágenes: ${product.hasImages ? 'Sí' : 'No'}`);          
+          if (product.images && product.images.length > 0) {            
+            console.log(`  - URLs de imágenes:`);           
+            product.images.forEach((img: any, index: number) => {              
+              console.log(`    ${index+1}. ${img.url || 'URL no disponible'}`);          
+            });          
+          }        
+        });
+        
+        // Ahora sí filtramos solo los productos del usuario actual
+        console.log('Intentando filtrar productos por usuario...');
+        const userProducts = allProducts.filter(product => {
+          // Comprobar si el producto pertenece al usuario actual.
+          // Podemos verificar en varios campos:
+          // 1. Campo users_permissions_users si existe
+          // 2. Campo createdBy que acabamos de crear
+          // 3. Campo userId para compatibilidad
+          const productUserId = product.users_permissions_users?.id || 
+                               product.userId || 
+                               (product.createdBy === String(userId));
+                              
+          return productUserId === userId || !productUserId;
+        });
+        
+        console.log(`Total de productos antes del filtrado: ${allProducts.length}`);
+        console.log(`Productos filtrados para el usuario actual: ${userProducts.length}`);
+        setProducts(userProducts);
+      } else if (result) {
+        // Intenta extraer productos de otras estructuras posibles
+        console.log('Estructura alternativa detectada, intentando adaptar.');
+        try {
+          // Verificar otras posibles estructuras en la respuesta
+          if (typeof result === 'object') {
+            if ('data' in result && result.data && 'products' in result.data) {
+              const productsData = (result.data as any).products;
+              if (Array.isArray(productsData)) {
+                const mappedProducts = productsData.map((p: any) => ({
+                  documentId: p.documentId || '',
+                  productName: p.productName || '',
+                  slug: p.slug || '',
+                  description: p.description || '',
+                  price: typeof p.price === 'number' ? p.price : 0,
+                  views: p.views || 0,
+                  active: p.active || false,
+                  userId: (session?.user as any)?.id,
+                  hasImages: false,
+                  images: [],
+                  isFeatured: false,
+                  weight: 0,
+                  dimensions: '',
+                  dateManufactured: '',
+                  remaininWarranty: '',
+                  State: '',
+                  cityName: '',
+                  provinceName: '',
+                  countryName: '',
+                  directionName: '',
+                  latitud: 0,
+                  longitud: 0,
+                  createdBy: '',
+                  users_permissions_users: ''
+                } as Product));
+                setProducts(mappedProducts);
+                return;
+              }
+            }
+          }
+          // Si no se pudo encontrar una estructura válida
+          console.log('No se pudo identificar una estructura válida en la respuesta');
+          setProducts([]);
+        } catch (e) {
+          console.log('Error al adaptar respuesta:', e);
+          setProducts([]);
+        }
+      } else {
+        console.log('No se encontraron productos o formato inesperado:', result);
+        setProducts([]);
+      }
+    } catch (err: any) {
+      console.error('Error al cargar productos:', err);
+      setError(`Error al cargar productos: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Función para subir imágenes a Strapi
+  const uploadImages = async (files: File[], productId: string): Promise<string[]> => {
+    if (!files.length) return [];
+    
+    const jwt = (session?.user as any)?.jwt;
+    if (!jwt) {
+      throw new Error('No se encontró token de autenticación.');
+    }
+    
+    console.log(`Subiendo ${files.length} imágenes para el producto ID ${productId}`);
+    
+    // Crear un FormData para subir las imágenes
+    const formData = new FormData();
+    
+    // Añadir el ID del producto al que pertenecen las imágenes
+    formData.append('ref', 'api::product.product');
+    formData.append('refId', productId);
+    formData.append('field', 'images');
+    
+    // Mostrar cada archivo que se va a subir para depuración
+    files.forEach(file => {
+      console.log(`Preparando archivo: ${file.name}, Tipo: ${file.type}, Tamaño: ${file.size} bytes`);
+      formData.append('files', file);
+    });
+    
+    // Usar nuestro nuevo endpoint de proxy
+    try {
+      // Usamos el proxy que hemos creado especialmente para subida de imágenes
+      const uploadUrl = '/api/graphql/proxy/upload';
+      console.log(`Enviando petición de carga de imágenes a ${uploadUrl}`);
+      
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${jwt}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        console.error(`Error HTTP: ${response.status} ${response.statusText}`);
+        const errorBody = await response.text();
+        console.error('Respuesta de error al subir imágenes:', errorBody);
+        console.warn('Continuando sin imágenes debido al error');
+        return [];
+      }
+
+      const data = await response.json();
+      console.log('Respuesta exitosa de subida de imágenes:', data);
+
+      if (Array.isArray(data)) {
+        return data.map((img: any) => img.id || img._id || '');
+      } else if (data.data && Array.isArray(data.data)) {
+        return data.data.map((img: any) => img.id || img._id || '');
+      }
+      return [];
+    } catch (error) {
+      console.error('Error en la petición de subida de imágenes:', error);
+      return [];
+    }
+  };
+
+  const createProduct = async (productData: Product) => {
+    setOperationLoading(true);
+    setOperationError(null);
+    setOperationSuccess(null);
+
+    try {
+      const jwt = (session?.user as any)?.jwt;
+      const userId = (session?.user as any)?.id;
+
+      if (!jwt || !userId) {
+        setOperationError('No se encontró token de autenticación o ID de usuario.');
+        return;
+      }
+
+      if (!productData.slug && productData.productName) {
+        productData.slug = generateSlug(productData.productName);
+      }
+
+      const inputData: ProductInput = {
+        productName: productData.productName,
+        slug: productData.slug || generateSlug(productData.productName),
+        description: productData.description,
+        price: productData.price,
+        active: productData.active,
+        isFeatured: productData.isFeatured,
+        weight: productData.weight,
+        dimensions: productData.dimensions,
+        dateManufactured: productData.dateManufactured,
+        remaininWarranty: productData.remaininWarranty,
+        State: productData.State,
+        cityName: productData.cityName,
+        provinceName: productData.provinceName,
+        countryName: productData.countryName,
+        directionName: productData.directionName,
+        latitud: productData.latitud,
+        longitud: productData.longitud,
+        createdBy: userId.toString(),
+        users_permissions_users: userId,
+      };
+
+      console.log(`Crear producto con datos:`, inputData);
+
+      const result: any = await request(
+        FULL_STRAPI_GRAPHQL_URL,
+        CREATE_PRODUCT,
+        { data: inputData },
+        { Authorization: `Bearer ${jwt}` }
+      );
+
+      console.log('Respuesta crear producto:', result);
+
+      if (result && result.createProduct) {
+        const createdProduct = result.createProduct;
+
+        const documentId =
+          createdProduct.documentId ||
+          (createdProduct.data?.documentId) ||
+          createdProduct.id ||
+          `temp-${Date.now()}`;
+
+        console.log(`Producto creado con ID ${documentId}`);
+
+        const productObj: Product = {
+          documentId,
+          productName: productData.productName,
+          slug: productData.slug,
+          description: productData.description,
+          price: productData.price,
+          active: productData.active,
+          isFeatured: productData.isFeatured,
+          weight: productData.weight,
+          dimensions: productData.dimensions,
+          dateManufactured: productData.dateManufactured,
+          remaininWarranty: productData.remaininWarranty,
+          State: productData.State,
+          cityName: productData.cityName,
+          provinceName: productData.provinceName,
+          countryName: productData.countryName,
+          directionName: productData.directionName,
+          latitud: productData.latitud,
+          longitud: productData.longitud,
+          userId,
+          hasImages: false,
+          images: [],
+        };
+
+        if (selectedFiles.length > 0) {
+          try {
+            const imageIds = await uploadImages(selectedFiles, documentId);
+            productObj.hasImages = imageIds && imageIds.length > 0;
+            console.log('Imágenes subidas con éxito:', imageIds);
+          } catch (imageError) {
+            console.error('Error al subir imágenes:', imageError);
+            setOperationError('Producto creado, pero hubo un error al subir las imágenes.');
+          }
+        }
+
+        setProducts([...products, productObj]);
+        setOperationSuccess('Producto creado correctamente.');
+        setIsDialogOpen(false);
+        setSelectedFiles([]);
+      } else {
+        setOperationError('No se pudo crear el producto o formato de respuesta inesperado.');
+        console.error('Formato de respuesta inesperado:', result);
+      }
+    } catch (err: any) {
+      console.error('Error al crear producto:', err);
+      setOperationError(`Error al crear producto: ${err.message}`);
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
+  const updateProduct = async (documentId: string, productData: Product) => {
+    setOperationLoading(true);
+    setOperationError(null);
+    setOperationSuccess(null);
+
+    try {
+      const jwt = (session?.user as any)?.jwt;
+      const userId = (session?.user as any)?.id;
+
+      if (!jwt || !userId) {
+        setOperationError('No se encontró token de autenticación o ID de usuario.');
+        return;
+      }
+
+      if (productData.userId && productData.userId !== userId) {
+        setOperationError('No tienes permiso para modificar este producto.');
+        return;
+      }
+
+      const inputData: ProductInput = {
+        productName: productData.productName,
+        slug: productData.slug,
+        description: productData.description,
+        price: productData.price,
+        active: productData.active,
+        isFeatured: productData.isFeatured,
+        weight: productData.weight,
+        dimensions: productData.dimensions,
+        dateManufactured: productData.dateManufactured,
+        remaininWarranty: productData.remaininWarranty,
+        State: productData.State,
+        cityName: productData.cityName,
+        provinceName: productData.provinceName,
+        countryName: productData.countryName,
+        directionName: productData.directionName,
+        latitud: productData.latitud,
+        longitud: productData.longitud,
+      };
+
+      console.log(`Actualizando producto ID ${documentId} con datos:`, inputData);
+
+      const result: any = await request(
+        FULL_STRAPI_GRAPHQL_URL,
+        UPDATE_PRODUCT,
+        {
+          id: documentId,
+          data: inputData,
+        },
+        { Authorization: `Bearer ${jwt}` }
+      );
+
+      console.log('Respuesta actualizar producto:', result);
+
+      if (result && result.updateProduct) {
+        const updatedData = result.updateProduct;
+
+        const productObj: Product = {
+          documentId,
+          productName: updatedData?.productName || productData.productName,
+          slug: updatedData?.slug || productData.slug,
+          description: updatedData?.description || productData.description,
+          price: typeof updatedData?.price === 'number' ? updatedData.price : productData.price,
+          active: updatedData?.active || productData.active,
+          isFeatured: updatedData?.isFeatured || productData.isFeatured,
+          weight: updatedData?.weight || productData.weight,
+          dimensions: updatedData?.dimensions || productData.dimensions,
+          dateManufactured: updatedData?.dateManufactured || productData.dateManufactured,
+          remaininWarranty: updatedData?.remaininWarranty || productData.remaininWarranty,
+          State: updatedData?.State || productData.State,
+          cityName: updatedData?.cityName || productData.cityName,
+          provinceName: updatedData?.provinceName || productData.provinceName,
+          countryName: updatedData?.countryName || productData.countryName,
+          directionName: updatedData?.directionName || productData.directionName,
+          latitud: updatedData?.latitud || productData.latitud,
+          longitud: updatedData?.longitud || productData.longitud,
+          userId,
+          hasImages: productData.hasImages || false,
+          images: productData.images || [],
+        };
+
+        if (selectedFiles.length > 0) {
+          try {
+            await uploadImages(selectedFiles, documentId);
+            productObj.hasImages = true;
+          } catch (error) {
+            console.error('Error al subir imágenes:', error);
+            setOperationError(`Producto actualizado pero hubo un error al subir las imágenes: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+          }
+        }
+
+        setProducts(products.map((p) => (p.documentId === documentId ? productObj : p)));
+        setOperationSuccess('Producto actualizado correctamente.');
+        setIsDialogOpen(false);
+        setSelectedFiles([]);
+      } else {
+        setOperationError('No se pudo actualizar el producto o formato de respuesta inesperado.');
+        console.error('Formato de respuesta inesperado:', result);
+      }
+    } catch (err: any) {
+      console.error('Error al actualizar producto:', err);
+      setOperationError(`Error al actualizar producto: ${err.message}`);
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
+  const deleteProduct = async (documentId: string) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar este producto? Esta acción no se puede deshacer.')) {
+      return;
+    }
+
+    setOperationLoading(true);
+    setOperationError(null);
+    setOperationSuccess(null);
+
+    try {
+      const jwt = (session?.user as any)?.jwt;
+      const userId = (session?.user as any)?.id;
+
+      if (!jwt || !userId) {
+        setOperationError('No se encontró token de autenticación o ID de usuario.');
+        return;
+      }
+
+      const productToDelete = products.find((p) => p.documentId === documentId);
+
+      if (productToDelete?.userId && productToDelete.userId !== userId) {
+        setOperationError('No tienes permiso para eliminar este producto.');
+        return;
+      }
+
+      console.log(`Eliminando producto ID ${documentId}`);
+
+      const result: any = await request(
+        FULL_STRAPI_GRAPHQL_URL,
+        DELETE_PRODUCT,
+        {
+          id: documentId,
+        },
+        { Authorization: `Bearer ${jwt}` }
+      );
+
+      console.log('Respuesta eliminar producto:', result);
+
+      if (result || result?.deleteProduct) {
+        setProducts(products.filter((p) => p.documentId !== documentId));
+        setOperationSuccess('Producto eliminado correctamente.');
+
+        if (isDialogOpen) {
+          setIsDialogOpen(false);
+        }
+      } else {
+        setOperationError('No se pudo eliminar el producto o formato de respuesta inesperado.');
+        console.error('Formato de respuesta inesperado:', result);
+      }
+    } catch (err: any) {
+      console.error('Error al eliminar producto:', err);
+      setOperationError(`Error al eliminar producto: ${err.message}`);
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+
+    if (name === 'productName' && dialogMode === 'create') {
+      setCurrentProduct({
+        ...currentProduct,
+        [name]: value,
+        slug: generateSlug(value),
+      });
+    } else {
+      setCurrentProduct({
+        ...currentProduct,
+        [name]: name === 'price' ? parseFloat(value) || 0 : value,
+      });
+    }
+  };
+
+  const handleImagesChange = (files: File[]) => {
+    setSelectedFiles(files);
+  };
+
+  const handleExistingImageRemove = async (index: number) => {
+    if (!currentProduct.documentId || !currentProduct.images || !currentProduct.images[index]) {
+      return;
+    }
+
+    const jwt = (session?.user as any)?.jwt;
+    if (!jwt) {
+      setOperationError('No se encontró token de autenticación.');
+      return;
+    }
+
+    try {
+      const imageToDelete = currentProduct.images[index];
+
+      const imageId = (imageToDelete as any).id || imageToDelete.url.split('/').pop();
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/upload/files/${imageId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('No se pudo eliminar la imagen');
+      }
+
+      const updatedImages = [...(currentProduct.images || [])];
+      updatedImages.splice(index, 1);
+
+      setCurrentProduct({
+        ...currentProduct,
+        images: updatedImages,
+        hasImages: updatedImages.length > 0,
+      });
+
+      setProducts(
+        products.map((p) =>
+          p.documentId === currentProduct.documentId ? { ...p, images: updatedImages } : p
+        )
+      );
+    } catch (error) {
+      console.error('Error al eliminar imagen:', error);
+      setOperationError(`Error al eliminar la imagen: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (session?.user) {
+      const userId = (session.user as any).id;
+      currentProduct.userId = userId;
+    }
+
+    console.log('Enviando producto con datos:', currentProduct);
+
+    if (dialogMode === 'create') {
+      createProduct(currentProduct);
+    } else if (dialogMode === 'edit' && currentProduct.documentId) {
+      updateProduct(currentProduct.documentId, currentProduct);
+    }
+  };
+
+  const startEdit = (product: Product) => {
+    setCurrentProduct({
+      documentId: product.documentId,
+      productName: product.productName,
+      slug: product.slug,
+      description: product.description,
+      price: product.price,
+      views: product.views || 0,
+      active: product.active || false,
+      userId: product.userId,
+      hasImages: product.hasImages,
+      images: product.images || [],
+      isFeatured: product.isFeatured || false,
+      weight: product.weight || 0,
+      dimensions: product.dimensions || '',
+      dateManufactured: product.dateManufactured || '',
+      remaininWarranty: product.remaininWarranty || '',
+      State: product.State || '',
+      cityName: product.cityName || '',
+      provinceName: product.provinceName || '',
+      countryName: product.countryName || '',
+      directionName: product.directionName || '',
+      latitud: product.latitud || 0,
+      longitud: product.longitud || 0,
+      createdBy: product.createdBy || '',
+      users_permissions_users: product.users_permissions_users || '',
+    });
+    setDialogMode('edit');
+    setIsDialogOpen(true);
+    setSelectedFiles([]); // Limpiar las imágenes seleccionadas al iniciar la edición
+  };
+
+  const startCreate = () => {
+    setCurrentProduct({
+      documentId: '',
+      productName: '',
+      slug: '',
+      description: '',
+      price: 0,
+      views: 0,
+      active: false,
+      userId: '',
+      hasImages: false,
+      images: [],
+      isFeatured: false,
+      weight: 0,
+      dimensions: '',
+      dateManufactured: '',
+      remaininWarranty: '',
+      State: '',
+      cityName: '',
+      provinceName: '',
+      countryName: '',
+      directionName: '',
+      latitud: 0,
+      longitud: 0,
+      createdBy: '',
+      users_permissions_users: '',
+    });
+    setDialogMode('create');
+    setIsDialogOpen(true);
+    setSelectedFiles([]); // Limpiar las imágenes seleccionadas al iniciar la creación
+  };
+
+  return (
+    <div>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Gestión de Productos</CardTitle>
+          <div className="text-sm text-gray-500">
+            Gestiona tus productos desde este panel
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={startCreate} className="mb-4">
+            Añadir Nuevo Producto
+          </Button>
+
+          {operationSuccess && (
+            <Alert className="mb-4 bg-green-50 text-green-800 border-green-200">
+              <AlertDescription>{operationSuccess}</AlertDescription>
+            </Alert>
+          )}
+
+          {operationError && (
+            <Alert className="mb-4 bg-red-50 text-red-800 border-red-200">
+              <AlertDescription>{operationError}</AlertDescription>
+            </Alert>
+          )}
+
+          {isLoading ? (
+            <div className="py-10 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+              <p className="mt-2">Cargando productos...</p>
+            </div>
+          ) : error ? (
+            <Alert className="mb-4 bg-red-50 text-red-800 border-red-200">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableCaption>Tus productos creados</TableCaption>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[150px]">Nombre</TableHead>
+                    <TableHead>Descripción</TableHead>
+                    <TableHead className="text-right">Precio (€)</TableHead>
+                    <TableHead className="text-center">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {products.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center py-6">
+                        No hay productos disponibles. Crea uno nuevo para empezar.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    products.map((product) => (
+                      <TableRow key={product.documentId}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            {product.hasImages && (
+                              <div className="relative w-8 h-8 overflow-hidden rounded-sm bg-gray-100 flex items-center justify-center">
+                                <div className="text-gray-400 text-xs">IMG</div>
+                              </div>
+                            )}
+                            {product.productName}
+                          </div>
+                        </TableCell>
+                        <TableCell className="truncate max-w-xs">{product.description}</TableCell>
+                        <TableCell className="text-right">{product.price?.toFixed(2)}€</TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex justify-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => startEdit(product)}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => deleteProduct(product.documentId!)}
+                              disabled={operationLoading}
+                            >
+                              Eliminar
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[525px] bg-white border shadow-lg">
+          <DialogHeader className="bg-gray-50 rounded-t-lg p-4">
+            <DialogTitle>{dialogMode === 'create' ? 'Crear nuevo producto' : 'Editar producto'}</DialogTitle>
+            <DialogDescription>
+              Completa la información del producto. Todos los campos marcados con * son obligatorios.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="productName">Nombre del producto *</Label>
+                <Input
+                  id="productName"
+                  placeholder="Ej: Impresora 3D Ender 3"
+                  value={currentProduct.productName}
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    setCurrentProduct({
+                      ...currentProduct,
+                      [e.target.name]: newName,
+                      slug: generateSlug(newName),
+                    });
+                  }}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="slug">URL amigable</Label>
+                <Input
+                  id="slug"
+                  placeholder="Autogenerado desde el nombre"
+                  value={currentProduct.slug}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Descripción *</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Describe el producto detalladamente..."
+                  value={currentProduct.description}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                  required
+                  rows={4}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="price">Precio (€) *</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Ej: 29.99"
+                  value={currentProduct.price.toString()}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: parseFloat(e.target.value) })}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="active">Estado del producto</Label>
+                <Select
+                  value={currentProduct.active ? 'true' : 'false'}
+                  onValueChange={(value) =>
+                    setCurrentProduct({
+                      ...currentProduct,
+                      active: value === 'true',
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Activo</SelectItem>
+                    <SelectItem value="false">Inactivo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="isFeatured">Producto destacado</Label>
+                <Select
+                  value={currentProduct.isFeatured ? 'true' : 'false'}
+                  onValueChange={(value) =>
+                    setCurrentProduct({
+                      ...currentProduct,
+                      isFeatured: value === 'true',
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar si es destacado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">Destacado</SelectItem>
+                    <SelectItem value="false">No destacado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="weight">Peso</Label>
+                <Input
+                  id="weight"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Peso en kg"
+                  value={currentProduct.weight?.toString() || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: parseFloat(e.target.value) })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="dimensions">Dimensiones</Label>
+                <Input
+                  id="dimensions"
+                  placeholder="Ej: 20 x 30 x 15 cm"
+                  value={currentProduct.dimensions || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="dateManufactured">Fecha de fabricación</Label>
+                <Input
+                  id="dateManufactured"
+                  type="date"
+                  value={currentProduct.dateManufactured || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="remaininWarranty">Tiempo de garantía restante</Label>
+                <Input
+                  id="remaininWarranty"
+                  placeholder="Ej: 12 meses"
+                  value={currentProduct.remaininWarranty || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="State">Estado</Label>
+                <Input
+                  id="State"
+                  placeholder="Ej: Nuevo"
+                  value={currentProduct.State || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="cityName">Ciudad</Label>
+                <Input
+                  id="cityName"
+                  placeholder="Ej: Madrid"
+                  value={currentProduct.cityName || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="provinceName">Provincia</Label>
+                <Input
+                  id="provinceName"
+                  placeholder="Ej: Madrid"
+                  value={currentProduct.provinceName || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="countryName">País</Label>
+                <Input
+                  id="countryName"
+                  placeholder="Ej: España"
+                  value={currentProduct.countryName || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="directionName">Dirección</Label>
+                <Input
+                  id="directionName"
+                  placeholder="Ej: Calle Falsa, 123"
+                  value={currentProduct.directionName || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="latitud">Latitud</Label>
+                <Input
+                  id="latitud"
+                  type="number"
+                  min="-90"
+                  max="90"
+                  step="0.000001"
+                  placeholder="Ej: 40.4168"
+                  value={currentProduct.latitud?.toString() || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: parseFloat(e.target.value) })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="longitud">Longitud</Label>
+                <Input
+                  id="longitud"
+                  type="number"
+                  min="-180"
+                  max="180"
+                  step="0.000001"
+                  placeholder="Ej: -3.7038"
+                  value={currentProduct.longitud?.toString() || ''}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: parseFloat(e.target.value) })}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-2 mt-4">
+              <Label>Imágenes del producto</Label>
+              <ImageUpload
+                selectedFiles={selectedFiles}
+                setSelectedFiles={setSelectedFiles}
+                existingImages={currentProduct.images || []}
+                onRemoveExistingImage={handleExistingImageRemove}
+              />
+            </div>
+
+            <div className="flex justify-end space-x-2 mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDialogOpen(false)}
+                disabled={operationLoading}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={operationLoading}>
+                {operationLoading ? 'Guardando...' : 'Guardar'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+      </Card>
+    </div>
+    </div>
+  );
+}
+
+export default ProductDashboard;

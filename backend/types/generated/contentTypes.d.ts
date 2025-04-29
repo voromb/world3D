@@ -555,6 +555,7 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     >;
     cityName: Schema.Attribute.String;
     countryName: Schema.Attribute.String;
+    createBy: Schema.Attribute.String;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -579,6 +580,7 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     > &
       Schema.Attribute.Private;
     longitud: Schema.Attribute.Float;
+    owner_id: Schema.Attribute.String;
     price: Schema.Attribute.Decimal;
     product_ratings: Schema.Attribute.Relation<
       'manyToMany',
@@ -600,6 +602,10 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    users_permissions_users: Schema.Attribute.Relation<
+      'manyToMany',
+      'plugin::users-permissions.user'
+    >;
     views: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
     weight: Schema.Attribute.Decimal;
   };
@@ -1133,6 +1139,7 @@ export interface PluginUsersPermissionsUser
       'manyToMany',
       'api::product-rating.product-rating'
     >;
+    products: Schema.Attribute.Relation<'manyToMany', 'api::product.product'>;
     provider: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
     resetPasswordToken: Schema.Attribute.String & Schema.Attribute.Private;
@@ -1143,6 +1150,7 @@ export interface PluginUsersPermissionsUser
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    userId: Schema.Attribute.UID<'username'>;
     username: Schema.Attribute.String &
       Schema.Attribute.Required &
       Schema.Attribute.Unique &

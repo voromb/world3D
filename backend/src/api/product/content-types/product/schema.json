@@ -119,6 +119,18 @@
       "relation": "manyToMany",
       "target": "api::favorite.favorite",
       "mappedBy": "products"
+    },
+    "createBy": {
+      "type": "string"
+    },
+    "users_permissions_users": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "plugin::users-permissions.user",
+      "inversedBy": "products"
+    },
+    "owner_id": {
+      "type": "string"
     }
   }
 }

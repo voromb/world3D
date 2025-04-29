@@ -72,14 +72,25 @@
       "inversedBy": "users_permissions_users"
     },
     "avatar": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
       "allowedTypes": [
         "images",
         "files",
         "videos",
         "audios"
-      ],
-      "type": "media",
-      "multiple": false
+      ]
+    },
+    "products": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::product.product",
+      "mappedBy": "users_permissions_users"
+    },
+    "userId": {
+      "type": "uid",
+      "targetField": "username"
     }
   }
 }
