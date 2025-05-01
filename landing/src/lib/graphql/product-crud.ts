@@ -1,30 +1,21 @@
 // src/lib/graphql/product-crud.ts
 import { gql } from '@apollo/client';
 
-// consulta básica para obtener todos los productos
+// consulta mínima para garantizar la compatibilidad con Strapi v5
 export const GET_PRODUCTS_FOR_DASHBOARD = `
   query {
     products {
       documentId
       productName
-      slug
       description
       price
       active
-      createdAt
-      updatedAt
-      publishedAt
       owner_id
-      images {
-        documentId
-        url
-        formats
-      }
     }
   }
 `;
 
-// crear un producto nuevo
+// Mutación simplificada para crear productos (con campos mínimos requeridos)
 export const CREATE_PRODUCT = `
   mutation CreateProduct($data: ProductInput!) {
     createProduct(data: $data) {
@@ -34,7 +25,23 @@ export const CREATE_PRODUCT = `
       description
       price
       active
+      isFeatured
+      weight
+      dimensions
+      owner_id
       createdAt
+    }
+  }
+`;
+
+// Versión más simple posible para evitar errores
+export const SIMPLIFIED_CREATE_PRODUCT = `
+  mutation CreateProduct($data: ProductInput!) {
+    createProduct(data: $data) {
+      id
+      documentId
+      productName
+      price
     }
   }
 `;
@@ -49,7 +56,26 @@ export const UPDATE_PRODUCT = `
       description
       price
       active
+      isFeatured
+      weight
+      dimensions
+      dateManufactured
+      remaininWarranty
+      State
+      cityName
+      provinceName
+      countryName
+      directionName
+      latitud
+      longitud
+      createBy
+      owner_id
       createdAt
+      updatedAt
+      images {
+        documentId
+        url
+      }
     }
   }
 `;
@@ -73,11 +99,42 @@ export const GET_PRODUCT_BY_ID = `
       description
       price
       active
+      isFeatured
+      weight
+      dimensions
+      dateManufactured
+      remaininWarranty
+      State
+      cityName
+      provinceName
+      countryName
+      directionName
+      latitud
+      longitud
+      views
+      averageRating
+      totalRatings
       createdAt
+      updatedAt
+      publishedAt
+      createBy
+      owner_id
       images {
         documentId
         url
         formats
+      }
+      categories {
+        documentId
+        name
+      }
+      shipping_types {
+        documentId
+        name
+      }
+      brands {
+        documentId
+        name
       }
     }
   }
@@ -116,12 +173,22 @@ export interface Product {
   latitud?: number;
   longitud?: number;
   createdAt?: string;
+  updatedAt?: string;
+  publishedAt?: string;
   userId?: string;
   createBy?: string;
   // Campo simple para filtrar por usuario
   owner_id?: string;
-  // Mantenemos el campo pero no lo usaremos en consultas
-  users_permissions_users?: string | {id: string; username?: string};
+  // Relaciones
+  users_permissions_users?: string[] | {id: string; username?: string}[];
+  categories?: any[];
+  shipping_types?: any[];
+  brands?: any[];
+  product_ratings?: any[];
+  // Campos calculados
+  averageRating?: number;
+  totalRatings?: number;
+  // Archivos
   hasImages?: boolean;
   images?: any[];
 }
@@ -145,7 +212,12 @@ export interface ProductInput {
   directionName?: string;
   latitud?: number;
   longitud?: number;
+  createBy?: string;
+  // Relaciones
   userId?: string;
   owner_id?: string; // Campo simple para filtrar por usuario
   users_permissions_users?: string[];
+  categories?: string[];
+  shipping_types?: string[];
+  brands?: string[];
 }

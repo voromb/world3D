@@ -9,6 +9,7 @@ import Image from 'next/image';
 import {
   GET_PRODUCTS_FOR_DASHBOARD,
   CREATE_PRODUCT,
+  SIMPLIFIED_CREATE_PRODUCT,
   UPDATE_PRODUCT,
   DELETE_PRODUCT,
   generateSlug,
@@ -53,53 +54,12 @@ export default function ProductDashboard() {
   // Obtener la información de sesión
   const { data: session, status } = useSession();
 
-  // Clave para localStorage
-  const USER_PRODUCTS_KEY = 'world3d_user_products';
-  
   // Cargar productos al iniciar el componente
   useEffect(() => {
     if (status === 'authenticated') {
       fetchProducts();
     }
   }, [status]);
-  
-  // Función para guardar la ID de un producto en localStorage
-  const saveProductToLocalStorage = (productId: string) => {
-    try {
-      const userId = (session?.user as any)?.id;
-      if (!userId) return;
-      
-      // Obtener productos guardados o inicializar un array vacío
-      const savedProducts = JSON.parse(localStorage.getItem(USER_PRODUCTS_KEY) || '{}');
-      
-      // Inicializar la lista de productos para este usuario si no existe
-      if (!savedProducts[userId]) {
-        savedProducts[userId] = [];
-      }
-      
-      // Añadir el ID del producto si no existe ya
-      if (!savedProducts[userId].includes(productId)) {
-        savedProducts[userId].push(productId);
-        localStorage.setItem(USER_PRODUCTS_KEY, JSON.stringify(savedProducts));
-      }
-    } catch (error) {
-      console.error('Error al guardar producto en localStorage:', error);
-    }
-  };
-  
-  // Función para verificar si un producto pertenece al usuario actual
-  const isUserProduct = (productId: string): boolean => {
-    try {
-      const userId = (session?.user as any)?.id;
-      if (!userId) return false;
-      
-      const savedProducts = JSON.parse(localStorage.getItem(USER_PRODUCTS_KEY) || '{}');
-      return savedProducts[userId]?.includes(productId) || false;
-    } catch (error) {
-      console.error('Error al verificar producto en localStorage:', error);
-      return false;
-    }
-  };
 
   // Función para obtener los productos
   const fetchProducts = async () => {
@@ -119,17 +79,15 @@ export default function ProductDashboard() {
       
       console.log(`Obteniendo productos para el usuario ID: ${userId}, Usuario: ${username}`);
       
-      // Hacer la petición a GraphQL
+      // Hacer la petición a GraphQL para obtener todos los productos
       const result: any = await request(
         FULL_STRAPI_GRAPHQL_URL,
         GET_PRODUCTS_FOR_DASHBOARD,
-        {},
+        {}, // Ya no necesitamos pasar el userId como parámetro
         { Authorization: `Bearer ${jwt}` }
       );
 
       console.log('Respuesta completa de la API:', result);
-      
-      console.log('Estructura de respuesta completa:', JSON.stringify(result, null, 2));
       
       // Verificar si hay una estructura de productos en el formato actual de Strapi
       if (result && result.products && Array.isArray(result.products)) {
@@ -137,24 +95,20 @@ export default function ProductDashboard() {
         let allProducts = result.products
           .filter((product: any) => product) // Filtrar valores nulos
           .map((product: any) => {
-            // Asignamos todos los productos al usuario actual para permitir su edición
-            // Ya que no podemos consultar la relación users_permissions_users por permisos
-            const productUserId = session?.user?.id || '';
-            
             // Crear objeto de producto con la estructura esperada por nuestra aplicación
             const productObject = {
               documentId: product.documentId || '',
-              id: product.documentId || '',
+              id: product.documentId || '', // Usamos documentId como id
               productName: product.productName || '',
-              slug: product.slug || '',
+              slug: product.slug || generateSlug(product.productName || ''),
               description: product.description || '',
               price: typeof product.price === 'number' ? product.price : 0,
               active: product.active || false,
-              createdAt: product.createdAt || '',
+              createdAt: new Date().toISOString(),
               createBy: product.createBy || '',
-              // Ya no utilizamos users_permissions_users
-              userId: productUserId,
-              hasImages: Boolean(product.images && product.images.length > 0),
+              userId: userId, // Importante para identificar pertenencia
+              owner_id: product.owner_id || '',
+              hasImages: false,
               images: product.images || [],
               isFeatured: product.isFeatured || false,
               weight: product.weight || 0,
@@ -176,37 +130,58 @@ export default function ProductDashboard() {
         console.log(`Total de productos recuperados: ${allProducts.length}`);
         console.log(`ID del usuario actual: ${userId}`);
         
-        // Imprimir información detallada para depuración
+        // Imprimimos todos los productos para depuración
         allProducts.forEach((product: Product) => {
-          console.log(`Producto: ${product.productName} (ID: ${product.documentId})`);
-          console.log(`  - Creado por usuario: ${product.userId || 'No especificado'}`);
-          console.log(`  - Tiene imágenes: ${product.hasImages ? 'Sí' : 'No'}`);
-          if (product.images && product.images.length > 0) {
-            console.log(`  - URLs de imágenes:`);
-            product.images.forEach((img: any, index: number) => {
-              console.log(`    ${index+1}. ${img.url || 'URL no disponible'}`);
-            });
-          }
+          console.log(`Producto encontrado - ID: ${product.id || product.documentId}, owner_id: ${product.owner_id}, createBy: ${product.createBy}`);
         });
         
-        // Filtramos los productos usando localStorage y el campo owner_id
+        // Implementamos un filtrado más flexible y tolerante para encontrar productos del usuario
         let userProducts = allProducts.filter((product: Product) => {
-          // Si el producto tiene owner_id y coincide con el usuario actual
-          if (product.owner_id && product.owner_id === userId.toString()) {
-            // Guardar en localStorage por si acaso (redundancia)
-            saveProductToLocalStorage(product.documentId || '');
+          // 1. Verificar por owner_id (el más fiable)
+          if (product.owner_id && product.owner_id.toString() === userId.toString()) {
+            console.log(`Producto encontrado por owner_id: ${product.productName}`);
             return true;
           }
           
-          // Si el producto está en localStorage como propiedad del usuario
-          if (product.documentId && isUserProduct(product.documentId)) {
+          // 2. Verificar por createBy
+          const username = (session?.user as any)?.username || '';
+          const email = (session?.user as any)?.email || '';
+          
+          if (product.createBy) {
+            // Comprobar si createBy contiene el nombre de usuario o email (búsqueda parcial)
+            if (
+              (username && product.createBy.includes(username)) ||
+              (email && product.createBy.includes(email))
+            ) {
+              console.log(`Producto encontrado por createBy parcial: ${product.productName}`);
+              return true;
+            }
+            
+            // Comprobar coincidencia exacta
+            if (product.createBy === username || product.createBy === email) {
+              console.log(`Producto encontrado por createBy exacto: ${product.productName}`);
+              return true;
+            }
+          }
+          
+          // 3. Si el ID del producto existe en la lista local, asumimos que es del usuario
+          // Esto garantiza que los productos recién creados se muestren incluso después de actualizar
+          const productId = product.id || product.documentId;
+          if (productId && products.some(p => p.id === productId || p.documentId === productId)) {
+            console.log(`Producto encontrado por coincidencia en memoria: ${product.productName}`);
             return true;
           }
           
-          // Para productos sin owner_id y que no están en localStorage,
-          // los mostramos si son antiguos productos del sistema
-          return !product.owner_id;
+          // No pertenece a este usuario
+          return false;
         });
+        
+        console.log(`Total de productos filtrados para el usuario ${userId}: ${userProducts.length}`);
+        
+        // Si no se encontraron productos, mostramos un mensaje informativo en la consola
+        if (userProducts.length === 0) {
+          console.log(`No se encontraron productos para el usuario ${userId}. Puede crear nuevos productos.`);
+        }
         
         console.log(`Mostrando productos filtrados para el usuario: ${session?.user?.email}`);
         console.log(`Total de productos filtrados: ${userProducts.length}`);
@@ -345,91 +320,143 @@ export default function ProductDashboard() {
         productData.slug = generateSlug(productData.productName);
       }
 
-      // Incluir solo campos que sabemos que funcionan con Strapi v5
+      // Incluir todos los campos disponibles en el modelo de producto de Strapi
       const inputData: ProductInput = {
+        // Campos básicos
         productName: productData.productName,
         slug: productData.slug || generateSlug(productData.productName),
         description: productData.description,
         price: productData.price,
         active: productData.active,
         isFeatured: productData.isFeatured,
+        // Campos de dimensiones y características físicas
         weight: productData.weight,
         dimensions: productData.dimensions,
-        // Campo simple para identificar al propietario del producto
+        // Campos de fecha y garantía
+        dateManufactured: productData.dateManufactured,
+        remaininWarranty: productData.remaininWarranty,
+        // Estado del producto
+        State: productData.State,
+        // Información de ubicación
+        cityName: productData.cityName,
+        provinceName: productData.provinceName,
+        countryName: productData.countryName,
+        directionName: productData.directionName,
+        latitud: productData.latitud,
+        longitud: productData.longitud,
+        // Campos de relación con el usuario
+        createBy: (session?.user as any)?.username || (session?.user as any)?.email || '',
+        // Campo simple para identificar al propietario del producto (necesario para consultas)
         owner_id: userId.toString(),
         // La forma correcta de asociar un producto con un usuario en Strapi v5
         // es mediante una lista de IDs en el campo users_permissions_users
-        users_permissions_users: [userId.toString()]
-        // Omitimos los campos problemáticos como dateManufactured y State que requieren formatos específicos
+        users_permissions_users: [userId.toString()],
+        // Otras relaciones (si están disponibles)
+        categories: productData.categories?.map(cat => cat.documentId || cat) || [],
+        shipping_types: productData.shipping_types?.map(st => st.documentId || st) || [],
+        brands: productData.brands?.map(brand => brand.documentId || brand) || []
       };
 
       console.log(`Crear producto con datos:`, inputData);
 
-      const result: any = await request(
-        FULL_STRAPI_GRAPHQL_URL,
-        CREATE_PRODUCT,
-        { data: inputData },
-        { Authorization: `Bearer ${jwt}` }
-      );
-
-      console.log('Respuesta crear producto:', result);
-
-      if (result && result.createProduct) {
-        const createdProduct = result.createProduct;
-
-        const documentId =
-          createdProduct.documentId ||
-          (createdProduct.data?.documentId) ||
-          createdProduct.id ||
-          `temp-${Date.now()}`;
-
-        console.log(`Producto creado con ID ${documentId}`);
+      // Crear un objeto ultra simplificado con solo los campos más básicos
+      const simplifiedData = {
+        productName: productData.productName,
+        slug: productData.slug || generateSlug(productData.productName),
+        description: productData.description || '',
+        // Asegurarnos que el precio es un número válido
+        price: typeof productData.price === 'number' ? productData.price : 0,
+        active: true,
+        // Asignar el propietario
+        owner_id: userId.toString()
+      };
+      
+      console.log('Enviando datos ultra simplificados:', simplifiedData);
+      
+      try {
+        const result: any = await request(
+          FULL_STRAPI_GRAPHQL_URL,
+          SIMPLIFIED_CREATE_PRODUCT,
+          { data: simplifiedData },
+          { Authorization: `Bearer ${jwt}` }
+        );
         
-        // Guardar el ID del producto en localStorage para persistencia
-        saveProductToLocalStorage(documentId);
+        console.log('Respuesta completa de crear producto:', JSON.stringify(result));
+        console.log('Respuesta crear producto:', result);
 
-        const productObj: Product = {
-          documentId,
-          productName: productData.productName,
-          slug: productData.slug,
-          description: productData.description,
-          price: productData.price,
-          active: productData.active,
-          isFeatured: productData.isFeatured,
-          weight: productData.weight,
-          dimensions: productData.dimensions,
-          dateManufactured: productData.dateManufactured,
-          remaininWarranty: productData.remaininWarranty,
-          State: productData.State,
-          cityName: productData.cityName,
-          provinceName: productData.provinceName,
-          countryName: productData.countryName,
-          directionName: productData.directionName,
-          latitud: productData.latitud,
-          longitud: productData.longitud,
-          userId,
-          hasImages: false,
-          images: [],
-        };
+        if (result && result.createProduct) {
+          const createdProduct = result.createProduct;
 
-        if (selectedFiles.length > 0) {
-          try {
-            const imageIds = await uploadImages(selectedFiles, documentId);
-            productObj.hasImages = imageIds.length > 0;
-            console.log('Imágenes subidas con éxito:', imageIds);
-          } catch (imageError) {
-            console.error('Error al subir imágenes:', imageError);
-            setOperationError('Producto creado, pero hubo un error al subir las imágenes.');
+          const documentId =
+            createdProduct.documentId ||
+            (createdProduct.data?.documentId) ||
+            createdProduct.id ||
+            `temp-${Date.now()}`;
+
+          console.log(`Producto creado con ID ${documentId}`);
+          
+          // El producto ya está asociado con el usuario en la base de datos
+          console.log(`Producto ${documentId} creado y asociado al usuario ${userId}`);
+          
+          // El producto está asociado con el usuario mediante owner_id
+
+          const productObj: Product = {
+            documentId,
+            productName: productData.productName,
+            slug: productData.slug,
+            description: productData.description,
+            price: productData.price,
+            active: productData.active,
+            isFeatured: productData.isFeatured,
+            weight: productData.weight,
+            dimensions: productData.dimensions,
+            dateManufactured: productData.dateManufactured,
+            remaininWarranty: productData.remaininWarranty,
+            State: productData.State,
+            cityName: productData.cityName,
+            provinceName: productData.provinceName,
+            countryName: productData.countryName,
+            directionName: productData.directionName,
+            latitud: productData.latitud,
+            longitud: productData.longitud,
+            // Campos de relación con el usuario
+            userId,
+            owner_id: userId.toString(),
+            createBy: (session?.user as any)?.username || (session?.user as any)?.email || '',
+            // Relaciones adicionales
+            users_permissions_users: [userId.toString()],
+            // Imágenes
+            hasImages: false,
+            images: [],
+            // Otros campos
+            createdAt: new Date().toISOString(),
+            views: 0,
+            averageRating: 0,
+            totalRatings: 0
+          };
+
+          if (selectedFiles.length > 0) {
+            try {
+              const imageIds = await uploadImages(selectedFiles, documentId);
+              productObj.hasImages = imageIds.length > 0;
+              console.log('Imágenes subidas con éxito:', imageIds);
+            } catch (imageError) {
+              console.error('Error al subir imágenes:', imageError);
+              setOperationError('Producto creado, pero hubo un error al subir las imágenes.');
+            }
           }
-        }
 
-        setProducts([...products, productObj]);
-        setOperationSuccess('Producto creado correctamente.');
-        setIsDialogOpen(false);
-        setSelectedFiles([]);
-      } else {
-        setOperationError('No se pudo crear el producto o formato de respuesta inesperado.');
-        console.error('Formato de respuesta inesperado:', result);
+          setProducts([...products, productObj]);
+          setOperationSuccess('Producto creado correctamente.');
+          setIsDialogOpen(false);
+          setSelectedFiles([]);
+        } else {
+          setOperationError('No se pudo crear el producto o formato de respuesta inesperado.');
+          console.error('Formato de respuesta inesperado:', result);
+        }
+      } catch (innerError: any) {
+        console.error('Error en la creación del producto:', innerError);
+        setOperationError(innerError.message || 'Error al crear el producto');
       }
     } catch (err: any) {
       console.error('Error al crear producto:', err);
@@ -459,22 +486,41 @@ export default function ProductDashboard() {
         return;
       }
 
-      // Incluir solo campos que sabemos que funcionan con Strapi v5
+      // Incluir todos los campos disponibles en el modelo de producto de Strapi
       const inputData: ProductInput = {
+        // Campos básicos
         productName: productData.productName,
         slug: productData.slug,
         description: productData.description,
         price: productData.price,
         active: productData.active,
         isFeatured: productData.isFeatured,
+        // Campos de dimensiones y características físicas
         weight: productData.weight,
         dimensions: productData.dimensions,
-        // Campo simple para identificar al propietario del producto
+        // Campos de fecha y garantía
+        dateManufactured: productData.dateManufactured,
+        remaininWarranty: productData.remaininWarranty,
+        // Estado del producto
+        State: productData.State,
+        // Información de ubicación
+        cityName: productData.cityName,
+        provinceName: productData.provinceName,
+        countryName: productData.countryName,
+        directionName: productData.directionName,
+        latitud: productData.latitud,
+        longitud: productData.longitud,
+        // Campos de relación con el usuario
+        createBy: (session?.user as any)?.username || (session?.user as any)?.email || '',
+        // Campo simple para identificar al propietario del producto (necesario para consultas)
         owner_id: userId.toString(),
         // La forma correcta de asociar un producto con un usuario en Strapi v5
         // es mediante una lista de IDs en el campo users_permissions_users
-        users_permissions_users: [userId.toString()]
-        // Omitimos los campos problemáticos como dateManufactured y State que requieren formatos específicos
+        users_permissions_users: [userId.toString()],
+        // Otras relaciones (si están disponibles)
+        categories: productData.categories?.map(cat => cat.documentId || cat) || [],
+        shipping_types: productData.shipping_types?.map(st => st.documentId || st) || [],
+        brands: productData.brands?.map(brand => brand.documentId || brand) || []
       };
 
       console.log(`Actualizando producto ID ${documentId} con datos:`, inputData);
@@ -500,8 +546,8 @@ export default function ProductDashboard() {
           slug: updatedData?.slug || productData.slug,
           description: updatedData?.description || productData.description,
           price: updatedData?.price || productData.price,
-          active: updatedData?.active || productData.active,
-          isFeatured: updatedData?.isFeatured || productData.isFeatured,
+          active: updatedData?.active !== undefined ? updatedData.active : productData.active,
+          isFeatured: updatedData?.isFeatured !== undefined ? updatedData.isFeatured : productData.isFeatured,
           weight: updatedData?.weight || productData.weight,
           dimensions: updatedData?.dimensions || productData.dimensions,
           dateManufactured: updatedData?.dateManufactured || productData.dateManufactured,
@@ -514,7 +560,18 @@ export default function ProductDashboard() {
           latitud: updatedData?.latitud || productData.latitud,
           longitud: updatedData?.longitud || productData.longitud,
           userId,
-          hasImages: productData.hasImages || false,
+          owner_id: userId.toString(),
+          createBy: updatedData?.createBy || productData.createBy || (session?.user as any)?.username || (session?.user as any)?.email || '',
+          users_permissions_users: [userId.toString()],
+          categories: updatedData?.categories || productData.categories || [],
+          shipping_types: updatedData?.shipping_types || productData.shipping_types || [],
+          brands: updatedData?.brands || productData.brands || [],
+          createdAt: updatedData?.createdAt || productData.createdAt,
+          updatedAt: new Date().toISOString(),
+          views: updatedData?.views || productData.views || 0,
+          averageRating: updatedData?.averageRating || productData.averageRating || 0,
+          totalRatings: updatedData?.totalRatings || productData.totalRatings || 0,
+          hasImages: productData.hasImages,
           images: productData.images || [],
         };
 

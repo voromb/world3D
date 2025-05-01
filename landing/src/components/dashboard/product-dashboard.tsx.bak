@@ -9,6 +9,7 @@ import Image from 'next/image';
 import {
   GET_PRODUCTS_FOR_DASHBOARD,
   CREATE_PRODUCT,
+  SIMPLIFIED_CREATE_PRODUCT,
   UPDATE_PRODUCT,
   DELETE_PRODUCT,
   generateSlug,
@@ -33,55 +34,34 @@ export default function ProductDashboard() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Estado para la sesión del usuario
-  const { data: session } = useSession();
+
+  // Estado para el formulario de creación/edición
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [currentProduct, setCurrentProduct] = useState<Product>({
-    documentId: '',
     productName: '',
     slug: '',
     description: '',
     price: 0,
-    views: 0,
-    active: false,
-    userId: '',
     hasImages: false,
-    images: [],
-    isFeatured: false,
-    weight: 0,
-    dimensions: '',
-    dateManufactured: '',
-    remaininWarranty: '',
-    State: '',
-    cityName: '',
-    provinceName: '',
-    countryName: '',
-    directionName: '',
-    latitud: 0,
-    longitud: 0,
-    createdBy: '',
-    users_permissions_users: ''
+    images: []
   });
-  
-  // Estado para las operaciones
-  const [operationLoading, setOperationLoading] = useState(false);
-  const [operationSuccess, setOperationSuccess] = useState<string | null>(null);
-  const [operationError, setOperationError] = useState<string | null>(null);
-  
-  // Estado para el manejo de imágenes
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  
-  // Cargar productos al iniciar cuando hay sesión disponible
+  const [operationLoading, setOperationLoading] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const [operationSuccess, setOperationSuccess] = useState<string | null>(null);
+
+  // Obtener la información de sesión
+  const { data: session, status } = useSession();
+
+  // Cargar productos al iniciar el componente
   useEffect(() => {
-    if (session) {
+    if (status === 'authenticated') {
       fetchProducts();
     }
-  }, [session]);
-  
-  // Función para filtrar productos del usuario actual
+  }, [status]);
+
+  // Función para obtener los productos
   const fetchProducts = async () => {
     setIsLoading(true);
     setError(null);
@@ -99,39 +79,35 @@ export default function ProductDashboard() {
       
       console.log(`Obteniendo productos para el usuario ID: ${userId}, Usuario: ${username}`);
       
-      // Hacer la petición a GraphQL directamente a la URL completa de Strapi
-      // Usamos FULL_STRAPI_GRAPHQL_URL que ya contiene la URL completa
-      const result: any = await request(FULL_STRAPI_GRAPHQL_URL, GET_PRODUCTS_FOR_DASHBOARD, {}, {
-        Authorization: `Bearer ${jwt}`,
-      });
+      // Hacer la petición a GraphQL para obtener todos los productos
+      const result: any = await request(
+        FULL_STRAPI_GRAPHQL_URL,
+        GET_PRODUCTS_FOR_DASHBOARD,
+        {}, // Ya no necesitamos pasar el userId como parámetro
+        { Authorization: `Bearer ${jwt}` }
+      );
 
       console.log('Respuesta completa de la API:', result);
       
-      // Verificar si hay una estructura de productos
+      // Verificar si hay una estructura de productos en el formato actual de Strapi
       if (result && result.products && Array.isArray(result.products)) {
         // Mapear los productos a nuestro formato y extraer la información necesaria
         let allProducts = result.products
           .filter((product: any) => product) // Filtrar valores nulos
           .map((product: any) => {
-            // Extraer información del usuario - ahora con los nuevos campos
-            const userInfo = product.users_permissions_users || {};
-            const productUserId = 
-                userInfo.id || 
-                (product.createdBy?.match(/\d+/) ? product.createdBy : '') || 
-                '';
-            
-            const productData = {
+            // Crear objeto de producto con la estructura esperada por nuestra aplicación
+            const productObject = {
               documentId: product.documentId || '',
+              id: product.documentId || '',
               productName: product.productName || '',
               slug: product.slug || '',
               description: product.description || '',
               price: typeof product.price === 'number' ? product.price : 0,
-              views: product.views || 0,
               active: product.active || false,
               createdAt: product.createdAt || '',
-              createdBy: product.createdBy || '',
-              users_permissions_users: userInfo,
-              userId: productUserId, // ID del usuario que creó el producto
+              createBy: product.createBy || '',
+              userId: userId, // Importante para identificar pertenencia
+              owner_id: product.owner_id || '',
               hasImages: Boolean(product.images && product.images.length > 0),
               images: product.images || [],
               isFeatured: product.isFeatured || false,
@@ -145,142 +121,132 @@ export default function ProductDashboard() {
               countryName: product.countryName || '',
               directionName: product.directionName || '',
               latitud: product.latitud || 0,
-              longitud: product.longitud || 0,
-              createdBy: product.createdBy || '',
-              users_permissions_users: product.users_permissions_users || ''
+              longitud: product.longitud || 0
             } as Product;
             
-            return productData;
+            return productObject;
           });
         
         console.log(`Total de productos recuperados: ${allProducts.length}`);
         console.log(`ID del usuario actual: ${userId}`);
         
-        // Primero mostramos todos para debugging
-        const filteredProducts = allProducts;
-        
-        // Imprimir información detallada para depuración
-        allProducts.forEach((product: Product) => {
-          console.log(`Producto: ${product.productName} (ID: ${product.documentId})`);          
-          console.log(`  - Creado por usuario: ${product.userId || 'No especificado'}`);          
-          console.log(`  - Tiene imágenes: ${product.hasImages ? 'Sí' : 'No'}`);          
-          if (product.images && product.images.length > 0) {            
-            console.log(`  - URLs de imágenes:`);           
-            product.images.forEach((img: any, index: number) => {              
-              console.log(`    ${index+1}. ${img.url || 'URL no disponible'}`);          
-            });          
-          }        
+        // Filtramos los productos que pertenecen al usuario actual
+        // Usamos múltiples criterios para identificar la propiedad
+        let userProducts = allProducts.filter((product: Product) => {
+          // 1. Primero comprobamos el campo owner_id (el más fiable)
+          if (product.owner_id === userId.toString()) {
+            console.log(`Producto encontrado por owner_id: ${product.productName}`);
+            return true;
+          }
+          
+          // 2. Comprobamos el campo createBy si coincide con el nombre de usuario o email
+          if (product.createBy && (
+              product.createBy === (session?.user as any)?.username || 
+              product.createBy === (session?.user as any)?.email
+          )) {
+            console.log(`Producto encontrado por createBy: ${product.productName}`);
+            return true;
+          }
+          
+          // 3. No pertenece a este usuario
+          return false;
         });
         
-        // Ahora sí filtramos solo los productos del usuario actual
-        console.log('Intentando filtrar productos por usuario...');
-        const userProducts = allProducts.filter(product => {
-          // Comprobar si el producto pertenece al usuario actual.
-          // Podemos verificar en varios campos:
-          // 1. Campo users_permissions_users si existe
-          // 2. Campo createdBy que acabamos de crear
-          // 3. Campo userId para compatibilidad
-          const productUserId = product.users_permissions_users?.id || 
-                               product.userId || 
-                               (product.createdBy === String(userId));
-                              
-          return productUserId === userId || !productUserId;
-        });
+        console.log(`Total de productos filtrados para el usuario ${userId}: ${userProducts.length}`);
         
-        console.log(`Total de productos antes del filtrado: ${allProducts.length}`);
+        // Si no se encontraron productos, mostramos un mensaje informativo en la consola
+        if (userProducts.length === 0) {
+          console.log(`No se encontraron productos para el usuario ${userId}. Puede crear nuevos productos.`);
+        }
+        
+        console.log(`Mostrando productos filtrados para el usuario: ${session?.user?.email}`);
+        console.log(`Total de productos filtrados: ${userProducts.length}`);
+        
+        // Añadimos el ID del usuario actual a cada producto para permitir su edición
+        if (session?.user?.id) {
+          userProducts = userProducts.map((product: Product) => ({
+            ...product,
+            userId: session.user?.id || ''  // Asignamos el ID del usuario actual con verificación de nulo
+          }));
+        }
+        
         console.log(`Productos filtrados para el usuario actual: ${userProducts.length}`);
         setProducts(userProducts);
       } else if (result) {
-        // Intenta extraer productos de otras estructuras posibles
+        // Intentar manejar otras estructuras posibles de respuesta
         console.log('Estructura alternativa detectada, intentando adaptar.');
         try {
           // Verificar otras posibles estructuras en la respuesta
-          if (typeof result === 'object') {
-            if ('data' in result && result.data && 'products' in result.data) {
-              const productsData = (result.data as any).products;
-              if (Array.isArray(productsData)) {
-                const mappedProducts = productsData.map((p: any) => ({
-                  documentId: p.documentId || '',
-                  productName: p.productName || '',
-                  slug: p.slug || '',
-                  description: p.description || '',
-                  price: typeof p.price === 'number' ? p.price : 0,
-                  views: p.views || 0,
-                  active: p.active || false,
-                  userId: (session?.user as any)?.id,
-                  hasImages: false,
-                  images: [],
-                  isFeatured: false,
-                  weight: 0,
-                  dimensions: '',
-                  dateManufactured: '',
-                  remaininWarranty: '',
-                  State: '',
-                  cityName: '',
-                  provinceName: '',
-                  countryName: '',
-                  directionName: '',
-                  latitud: 0,
-                  longitud: 0,
-                  createdBy: '',
-                  users_permissions_users: ''
-                } as Product));
-                setProducts(mappedProducts);
-                return;
-              }
-            }
+          const productsData = result.products || 
+                             (result.data && result.data.products) || 
+                             [];
+          
+          if (Array.isArray(productsData) && productsData.length > 0) {
+            console.log(`Datos recuperados en formato alternativo: ${productsData.length} productos`);
+            
+            // Mapear productos al formato que espera nuestra aplicación
+            const mappedProducts = productsData.map((item: any) => {
+              return {
+                documentId: item.documentId || item.id || '',
+                id: item.documentId || item.id || '',
+                productName: item.productName || item.name || '',
+                slug: item.slug || '',
+                description: item.description || '',
+                price: typeof item.price === 'number' ? item.price : 0,
+                active: item.active || false,
+                createdAt: item.createdAt || '',
+                userId: session?.user?.id || '',  // Asignamos el ID del usuario actual
+                hasImages: Boolean(item.images && item.images.length > 0),
+                images: item.images || [],
+              } as Product;
+            });
+            
+            setProducts(mappedProducts);
+          } else {
+            setError('No se encontraron productos en la respuesta.');
           }
-          // Si no se pudo encontrar una estructura válida
-          console.log('No se pudo identificar una estructura válida en la respuesta');
-          setProducts([]);
-        } catch (e) {
-          console.log('Error al adaptar respuesta:', e);
-          setProducts([]);
+        } catch (extractError) {
+          console.error('Error al procesar estructura alternativa:', extractError);
+          setError('Formato de respuesta no reconocido.');
         }
       } else {
-        console.log('No se encontraron productos o formato inesperado:', result);
-        setProducts([]);
+        setError('No se encontraron productos o formato de respuesta inesperado.');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error al cargar productos:', err);
-      setError(`Error al cargar productos: ${err.message}`);
+      setError(err instanceof Error ? err.message : 'Error al cargar productos');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Función para subir imágenes a Strapi
-  const uploadImages = async (files: File[], productId: string): Promise<string[]> => {
+  // Función para subir imágenes
+  const uploadImages = async (files: File[], productId: string) => {
     if (!files.length) return [];
+
+    console.log(`Subiendo ${files.length} imágenes para el producto ${productId}`);
     
-    const jwt = (session?.user as any)?.jwt;
-    if (!jwt) {
-      throw new Error('No se encontró token de autenticación.');
-    }
-    
-    console.log(`Subiendo ${files.length} imágenes para el producto ID ${productId}`);
-    
-    // Crear un FormData para subir las imágenes
     const formData = new FormData();
     
-    // Añadir el ID del producto al que pertenecen las imágenes
-    formData.append('ref', 'api::product.product');
-    formData.append('refId', productId);
-    formData.append('field', 'images');
-    
-    // Mostrar cada archivo que se va a subir para depuración
+    // Añadir cada archivo al formData
     files.forEach(file => {
-      console.log(`Preparando archivo: ${file.name}, Tipo: ${file.type}, Tamaño: ${file.size} bytes`);
       formData.append('files', file);
     });
     
-    // Usar nuestro nuevo endpoint de proxy
+    // Añadir el campo ref para relacionarlo con el producto
+    formData.append('ref', 'api::product.product');
+    formData.append('refId', productId);
+    formData.append('field', 'images');
+
     try {
-      // Usamos el proxy que hemos creado especialmente para subida de imágenes
-      const uploadUrl = '/api/graphql/proxy/upload';
-      console.log(`Enviando petición de carga de imágenes a ${uploadUrl}`);
+      const jwt = (session?.user as any)?.jwt;
       
-      const response = await fetch(uploadUrl, {
+      if (!jwt) {
+        throw new Error('No se encontró token de autenticación.');
+      }
+
+      // Hacer la petición al endpoint de carga de imágenes
+      const response = await fetch(`/api/graphql/proxy/upload`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${jwt}`,
@@ -291,7 +257,7 @@ export default function ProductDashboard() {
       if (!response.ok) {
         console.error(`Error HTTP: ${response.status} ${response.statusText}`);
         const errorBody = await response.text();
-        console.error('Respuesta de error al subir imágenes:', errorBody);
+        console.error('Cuerpo del error:', errorBody);
         console.warn('Continuando sin imágenes debido al error');
         return [];
       }
@@ -311,6 +277,7 @@ export default function ProductDashboard() {
     }
   };
 
+  // Función para crear un nuevo producto
   const createProduct = async (productData: Product) => {
     setOperationLoading(true);
     setOperationError(null);
@@ -329,40 +296,71 @@ export default function ProductDashboard() {
         productData.slug = generateSlug(productData.productName);
       }
 
+      // Incluir todos los campos disponibles en el modelo de producto de Strapi
       const inputData: ProductInput = {
+        // Campos básicos
         productName: productData.productName,
         slug: productData.slug || generateSlug(productData.productName),
         description: productData.description,
         price: productData.price,
         active: productData.active,
         isFeatured: productData.isFeatured,
+        // Campos de dimensiones y características físicas
         weight: productData.weight,
         dimensions: productData.dimensions,
+        // Campos de fecha y garantía
         dateManufactured: productData.dateManufactured,
         remaininWarranty: productData.remaininWarranty,
+        // Estado del producto
         State: productData.State,
+        // Información de ubicación
         cityName: productData.cityName,
         provinceName: productData.provinceName,
         countryName: productData.countryName,
         directionName: productData.directionName,
         latitud: productData.latitud,
         longitud: productData.longitud,
-        createdBy: userId.toString(),
-        users_permissions_users: userId,
+        // Campos de relación con el usuario
+        createBy: (session?.user as any)?.username || (session?.user as any)?.email || '',
+        // Campo simple para identificar al propietario del producto (necesario para consultas)
+        owner_id: userId.toString(),
+        // La forma correcta de asociar un producto con un usuario en Strapi v5
+        // es mediante una lista de IDs en el campo users_permissions_users
+        users_permissions_users: [userId.toString()],
+        // Otras relaciones (si están disponibles)
+        categories: productData.categories?.map(cat => cat.documentId || cat) || [],
+        shipping_types: productData.shipping_types?.map(st => st.documentId || st) || [],
+        brands: productData.brands?.map(brand => brand.documentId || brand) || []
       };
 
       console.log(`Crear producto con datos:`, inputData);
 
-      const result: any = await request(
-        FULL_STRAPI_GRAPHQL_URL,
-        CREATE_PRODUCT,
-        { data: inputData },
-        { Authorization: `Bearer ${jwt}` }
-      );
+      // Crear un objeto ultra simplificado con solo los campos más básicos
+      const simplifiedData = {
+        productName: productData.productName,
+        slug: productData.slug || generateSlug(productData.productName),
+        description: productData.description || '',
+        // Asegurarnos que el precio es un número válido
+        price: typeof productData.price === 'number' ? productData.price : 0,
+        active: true,
+        // Asignar el propietario
+        owner_id: userId.toString()
+      };
+      
+      console.log('Enviando datos ultra simplificados:', simplifiedData);
+      
+      try {
+        const result: any = await request(
+          FULL_STRAPI_GRAPHQL_URL,
+          SIMPLIFIED_CREATE_PRODUCT,
+          { data: simplifiedData },
+          { Authorization: `Bearer ${jwt}` }
+        );
+        
+        console.log('Respuesta completa de crear producto:', JSON.stringify(result));
+        console.log('Respuesta crear producto:', result);
 
-      console.log('Respuesta crear producto:', result);
-
-      if (result && result.createProduct) {
+        if (result && result.createProduct) {
         const createdProduct = result.createProduct;
 
         const documentId =
@@ -372,6 +370,11 @@ export default function ProductDashboard() {
           `temp-${Date.now()}`;
 
         console.log(`Producto creado con ID ${documentId}`);
+        
+        // El producto ya está asociado con el usuario en la base de datos
+        console.log(`Producto ${documentId} creado y asociado al usuario ${userId}`);
+        
+        // El producto está asociado con el usuario mediante owner_id
 
         const productObj: Product = {
           documentId,
@@ -392,15 +395,26 @@ export default function ProductDashboard() {
           directionName: productData.directionName,
           latitud: productData.latitud,
           longitud: productData.longitud,
+          // Campos de relación con el usuario
           userId,
+          owner_id: userId.toString(),
+          createBy: (session?.user as any)?.username || (session?.user as any)?.email || '',
+          // Relaciones adicionales
+          users_permissions_users: [userId.toString()],
+          // Imágenes
           hasImages: false,
           images: [],
+          // Otros campos
+          createdAt: new Date().toISOString(),
+          views: 0,
+          averageRating: 0,
+          totalRatings: 0
         };
 
         if (selectedFiles.length > 0) {
           try {
             const imageIds = await uploadImages(selectedFiles, documentId);
-            productObj.hasImages = imageIds && imageIds.length > 0;
+            productObj.hasImages = imageIds.length > 0;
             console.log('Imágenes subidas con éxito:', imageIds);
           } catch (imageError) {
             console.error('Error al subir imágenes:', imageError);
@@ -418,12 +432,13 @@ export default function ProductDashboard() {
       }
     } catch (err: any) {
       console.error('Error al crear producto:', err);
-      setOperationError(`Error al crear producto: ${err.message}`);
+      setOperationError(err.message || 'Error al crear el producto');
     } finally {
       setOperationLoading(false);
     }
   };
 
+  // Función para actualizar un producto existente
   const updateProduct = async (documentId: string, productData: Product) => {
     setOperationLoading(true);
     setOperationError(null);
@@ -443,24 +458,41 @@ export default function ProductDashboard() {
         return;
       }
 
+      // Incluir todos los campos disponibles en el modelo de producto de Strapi
       const inputData: ProductInput = {
+        // Campos básicos
         productName: productData.productName,
         slug: productData.slug,
         description: productData.description,
         price: productData.price,
         active: productData.active,
         isFeatured: productData.isFeatured,
+        // Campos de dimensiones y características físicas
         weight: productData.weight,
         dimensions: productData.dimensions,
+        // Campos de fecha y garantía
         dateManufactured: productData.dateManufactured,
         remaininWarranty: productData.remaininWarranty,
+        // Estado del producto
         State: productData.State,
+        // Información de ubicación
         cityName: productData.cityName,
         provinceName: productData.provinceName,
         countryName: productData.countryName,
         directionName: productData.directionName,
         latitud: productData.latitud,
         longitud: productData.longitud,
+        // Campos de relación con el usuario
+        createBy: (session?.user as any)?.username || (session?.user as any)?.email || '',
+        // Campo simple para identificar al propietario del producto (necesario para consultas)
+        owner_id: userId.toString(),
+        // La forma correcta de asociar un producto con un usuario en Strapi v5
+        // es mediante una lista de IDs en el campo users_permissions_users
+        users_permissions_users: [userId.toString()],
+        // Otras relaciones (si están disponibles)
+        categories: productData.categories?.map(cat => cat.documentId || cat) || [],
+        shipping_types: productData.shipping_types?.map(st => st.documentId || st) || [],
+        brands: productData.brands?.map(brand => brand.documentId || brand) || []
       };
 
       console.log(`Actualizando producto ID ${documentId} con datos:`, inputData);
@@ -469,7 +501,7 @@ export default function ProductDashboard() {
         FULL_STRAPI_GRAPHQL_URL,
         UPDATE_PRODUCT,
         {
-          id: documentId,
+          documentId: documentId,
           data: inputData,
         },
         { Authorization: `Bearer ${jwt}` }
@@ -485,9 +517,9 @@ export default function ProductDashboard() {
           productName: updatedData?.productName || productData.productName,
           slug: updatedData?.slug || productData.slug,
           description: updatedData?.description || productData.description,
-          price: typeof updatedData?.price === 'number' ? updatedData.price : productData.price,
-          active: updatedData?.active || productData.active,
-          isFeatured: updatedData?.isFeatured || productData.isFeatured,
+          price: updatedData?.price || productData.price,
+          active: updatedData?.active !== undefined ? updatedData.active : productData.active,
+          isFeatured: updatedData?.isFeatured !== undefined ? updatedData.isFeatured : productData.isFeatured,
           weight: updatedData?.weight || productData.weight,
           dimensions: updatedData?.dimensions || productData.dimensions,
           dateManufactured: updatedData?.dateManufactured || productData.dateManufactured,
@@ -500,7 +532,18 @@ export default function ProductDashboard() {
           latitud: updatedData?.latitud || productData.latitud,
           longitud: updatedData?.longitud || productData.longitud,
           userId,
-          hasImages: productData.hasImages || false,
+          owner_id: userId.toString(),
+          createBy: updatedData?.createBy || productData.createBy || (session?.user as any)?.username || (session?.user as any)?.email || '',
+          users_permissions_users: [userId.toString()],
+          categories: updatedData?.categories || productData.categories || [],
+          shipping_types: updatedData?.shipping_types || productData.shipping_types || [],
+          brands: updatedData?.brands || productData.brands || [],
+          createdAt: updatedData?.createdAt || productData.createdAt,
+          updatedAt: new Date().toISOString(),
+          views: updatedData?.views || productData.views || 0,
+          averageRating: updatedData?.averageRating || productData.averageRating || 0,
+          totalRatings: updatedData?.totalRatings || productData.totalRatings || 0,
+          hasImages: productData.hasImages,
           images: productData.images || [],
         };
 
@@ -509,7 +552,6 @@ export default function ProductDashboard() {
             await uploadImages(selectedFiles, documentId);
             productObj.hasImages = true;
           } catch (error) {
-            console.error('Error al subir imágenes:', error);
             setOperationError(`Producto actualizado pero hubo un error al subir las imágenes: ${error instanceof Error ? error.message : 'Error desconocido'}`);
           }
         }
@@ -524,12 +566,13 @@ export default function ProductDashboard() {
       }
     } catch (err: any) {
       console.error('Error al actualizar producto:', err);
-      setOperationError(`Error al actualizar producto: ${err.message}`);
+      setOperationError(err.message || 'Error al actualizar el producto');
     } finally {
       setOperationLoading(false);
     }
   };
 
+  // Función para eliminar un producto
   const deleteProduct = async (documentId: string) => {
     if (!confirm('¿Estás seguro de que quieres eliminar este producto? Esta acción no se puede deshacer.')) {
       return;
@@ -561,7 +604,7 @@ export default function ProductDashboard() {
         FULL_STRAPI_GRAPHQL_URL,
         DELETE_PRODUCT,
         {
-          id: documentId,
+          documentId: documentId,
         },
         { Authorization: `Bearer ${jwt}` }
       );
@@ -581,19 +624,20 @@ export default function ProductDashboard() {
       }
     } catch (err: any) {
       console.error('Error al eliminar producto:', err);
-      setOperationError(`Error al eliminar producto: ${err.message}`);
+      setOperationError(err.message || 'Error al eliminar el producto');
     } finally {
       setOperationLoading(false);
     }
   };
 
+  // Manejador para el cambio de campos en el formulario
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
 
     if (name === 'productName' && dialogMode === 'create') {
       setCurrentProduct({
         ...currentProduct,
-        [name]: value,
+        productName: value,
         slug: generateSlug(value),
       });
     } else {
@@ -604,10 +648,12 @@ export default function ProductDashboard() {
     }
   };
 
+  // Manejador para el cambio de imágenes
   const handleImagesChange = (files: File[]) => {
     setSelectedFiles(files);
   };
 
+  // Manejador para eliminar imágenes existentes
   const handleExistingImageRemove = async (index: number) => {
     if (!currentProduct.documentId || !currentProduct.images || !currentProduct.images[index]) {
       return;
@@ -655,6 +701,7 @@ export default function ProductDashboard() {
     }
   };
 
+  // Manejador para enviar el formulario
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -672,6 +719,7 @@ export default function ProductDashboard() {
     }
   };
 
+  // Iniciar edición de un producto
   const startEdit = (product: Product) => {
     setCurrentProduct({
       documentId: product.documentId,
@@ -679,43 +727,34 @@ export default function ProductDashboard() {
       slug: product.slug,
       description: product.description,
       price: product.price,
-      views: product.views || 0,
-      active: product.active || false,
-      userId: product.userId,
-      hasImages: product.hasImages,
-      images: product.images || [],
-      isFeatured: product.isFeatured || false,
-      weight: product.weight || 0,
-      dimensions: product.dimensions || '',
-      dateManufactured: product.dateManufactured || '',
-      remaininWarranty: product.remaininWarranty || '',
-      State: product.State || '',
-      cityName: product.cityName || '',
-      provinceName: product.provinceName || '',
-      countryName: product.countryName || '',
-      directionName: product.directionName || '',
-      latitud: product.latitud || 0,
-      longitud: product.longitud || 0,
-      createdBy: product.createdBy || '',
-      users_permissions_users: product.users_permissions_users || '',
+      active: product.active,
+      isFeatured: product.isFeatured,
+      weight: product.weight,
+      dimensions: product.dimensions,
+      dateManufactured: product.dateManufactured,
+      remaininWarranty: product.remaininWarranty,
+      State: product.State,
+      cityName: product.cityName,
+      provinceName: product.provinceName,
+      countryName: product.countryName,
+      directionName: product.directionName,
+      latitud: product.latitud,
+      longitud: product.longitud,
+      createBy: product.createBy || '',
+      // users_permissions_users eliminado para evitar errores
     });
     setDialogMode('edit');
     setIsDialogOpen(true);
-    setSelectedFiles([]); // Limpiar las imágenes seleccionadas al iniciar la edición
   };
 
+  // Iniciar creación de un producto
   const startCreate = () => {
     setCurrentProduct({
-      documentId: '',
       productName: '',
       slug: '',
       description: '',
       price: 0,
-      views: 0,
-      active: false,
-      userId: '',
-      hasImages: false,
-      images: [],
+      active: true,
       isFeatured: false,
       weight: 0,
       dimensions: '',
@@ -728,14 +767,15 @@ export default function ProductDashboard() {
       directionName: '',
       latitud: 0,
       longitud: 0,
-      createdBy: '',
-      users_permissions_users: '',
+      createBy: '',
+      // users_permissions_users eliminado para evitar errores
     });
     setDialogMode('create');
     setIsDialogOpen(true);
     setSelectedFiles([]); // Limpiar las imágenes seleccionadas al iniciar la creación
   };
 
+  // Renderizado del componente
   return (
     <div>
       <Card className="mb-6">
@@ -771,6 +811,20 @@ export default function ProductDashboard() {
             <Alert className="mb-4 bg-red-50 text-red-800 border-red-200">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
+          ) : products.length === 0 ? (
+            <div className="text-center py-10">
+              <Alert className="my-4">
+                <AlertDescription>No tienes productos creados aún.</AlertDescription>
+              </Alert>
+
+              <Alert className="my-4">
+                <AlertDescription>Crea un producto utilizando el botón superior.</AlertDescription>
+              </Alert>
+
+              <Alert className="my-4">                
+                <AlertDescription>Los productos se mostrarán en esta tabla.</AlertDescription>
+              </Alert>
+            </div>
           ) : (
             <div className="rounded-md border">
               <Table>
@@ -779,54 +833,46 @@ export default function ProductDashboard() {
                   <TableRow>
                     <TableHead className="w-[150px]">Nombre</TableHead>
                     <TableHead>Descripción</TableHead>
-                    <TableHead className="text-right">Precio (€)</TableHead>
-                    <TableHead className="text-center">Acciones</TableHead>
+                    <TableHead>Precio</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {products.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center py-6">
-                        No hay productos disponibles. Crea uno nuevo para empezar.
+                  {products.map((product) => (
+                    <TableRow key={product.documentId}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {product.hasImages && (
+                            <div className="relative w-8 h-8 overflow-hidden rounded-sm bg-gray-100 flex items-center justify-center">
+                              <div className="text-gray-400 text-xs">IMG</div>
+                            </div>
+                          )}
+                          <span className="font-medium">{product.productName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[300px] truncate">{product.description}</TableCell>
+                      <TableCell className="text-right">{product.price?.toFixed(2)}€</TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex justify-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => startEdit(product)}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => deleteProduct(product.documentId!)}
+                            disabled={operationLoading}
+                          >
+                            Eliminar
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    products.map((product) => (
-                      <TableRow key={product.documentId}>
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            {product.hasImages && (
-                              <div className="relative w-8 h-8 overflow-hidden rounded-sm bg-gray-100 flex items-center justify-center">
-                                <div className="text-gray-400 text-xs">IMG</div>
-                              </div>
-                            )}
-                            {product.productName}
-                          </div>
-                        </TableCell>
-                        <TableCell className="truncate max-w-xs">{product.description}</TableCell>
-                        <TableCell className="text-right">{product.price?.toFixed(2)}€</TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex justify-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => startEdit(product)}
-                            >
-                              Editar
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => deleteProduct(product.documentId!)}
-                              disabled={operationLoading}
-                            >
-                              Eliminar
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
+                  ))}
                 </TableBody>
               </Table>
             </div>
@@ -838,24 +884,23 @@ export default function ProductDashboard() {
         <DialogContent className="sm:max-w-[525px] bg-white border shadow-lg">
           <DialogHeader className="bg-gray-50 rounded-t-lg p-4">
             <DialogTitle>{dialogMode === 'create' ? 'Crear nuevo producto' : 'Editar producto'}</DialogTitle>
-            <DialogDescription>
-              Completa la información del producto. Todos los campos marcados con * son obligatorios.
-            </DialogDescription>
+            <DialogDescription>Completa los detalles del producto para {dialogMode === 'create' ? 'crearlo' : 'actualizarlo'}</DialogDescription>
           </DialogHeader>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4">
+          
+          <form onSubmit={handleSubmit} className="p-4 space-y-4">
+            <div className="grid gap-4">
               <div className="space-y-2">
-                <Label htmlFor="productName">Nombre del producto *</Label>
+                <Label htmlFor="productName">Nombre del producto</Label>
                 <Input
                   id="productName"
-                  placeholder="Ej: Impresora 3D Ender 3"
+                  name="productName"
+                  placeholder="Nombre descriptivo del producto"
                   value={currentProduct.productName}
                   onChange={(e) => {
                     const newName = e.target.value;
                     setCurrentProduct({
                       ...currentProduct,
-                      [e.target.name]: newName,
+                      productName: newName,
                       slug: generateSlug(newName),
                     });
                   }}
@@ -867,34 +912,37 @@ export default function ProductDashboard() {
                 <Label htmlFor="slug">URL amigable</Label>
                 <Input
                   id="slug"
+                  name="slug"
                   placeholder="Autogenerado desde el nombre"
                   value={currentProduct.slug}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, slug: e.target.value })}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Descripción *</Label>
+                <Label htmlFor="description">Descripción</Label>
                 <Textarea
                   id="description"
+                  name="description"
                   placeholder="Describe el producto detalladamente..."
                   value={currentProduct.description}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, description: e.target.value })}
                   required
                   rows={4}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="price">Precio (€) *</Label>
+                <Label htmlFor="price">Precio (€)</Label>
                 <Input
                   id="price"
+                  name="price"
                   type="number"
                   min="0"
                   step="0.01"
                   placeholder="Ej: 29.99"
                   value={currentProduct.price.toString()}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: parseFloat(e.target.value) })}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, price: parseFloat(e.target.value) })}
                   required
                 />
               </div>
@@ -940,17 +988,20 @@ export default function ProductDashboard() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
 
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="weight">Peso</Label>
                 <Input
                   id="weight"
+                  name="weight"
                   type="number"
                   min="0"
                   step="0.01"
                   placeholder="Peso en kg"
                   value={currentProduct.weight?.toString() || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: parseFloat(e.target.value) })}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, weight: parseFloat(e.target.value) })}
                 />
               </div>
 
@@ -958,141 +1009,49 @@ export default function ProductDashboard() {
                 <Label htmlFor="dimensions">Dimensiones</Label>
                 <Input
                   id="dimensions"
+                  name="dimensions"
                   placeholder="Ej: 20 x 30 x 15 cm"
                   value={currentProduct.dimensions || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="dateManufactured">Fecha de fabricación</Label>
-                <Input
-                  id="dateManufactured"
-                  type="date"
-                  value={currentProduct.dateManufactured || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="remaininWarranty">Tiempo de garantía restante</Label>
-                <Input
-                  id="remaininWarranty"
-                  placeholder="Ej: 12 meses"
-                  value={currentProduct.remaininWarranty || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="State">Estado</Label>
-                <Input
-                  id="State"
-                  placeholder="Ej: Nuevo"
-                  value={currentProduct.State || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="cityName">Ciudad</Label>
-                <Input
-                  id="cityName"
-                  placeholder="Ej: Madrid"
-                  value={currentProduct.cityName || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="provinceName">Provincia</Label>
-                <Input
-                  id="provinceName"
-                  placeholder="Ej: Madrid"
-                  value={currentProduct.provinceName || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="countryName">País</Label>
-                <Input
-                  id="countryName"
-                  placeholder="Ej: España"
-                  value={currentProduct.countryName || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="directionName">Dirección</Label>
-                <Input
-                  id="directionName"
-                  placeholder="Ej: Calle Falsa, 123"
-                  value={currentProduct.directionName || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="latitud">Latitud</Label>
-                <Input
-                  id="latitud"
-                  type="number"
-                  min="-90"
-                  max="90"
-                  step="0.000001"
-                  placeholder="Ej: 40.4168"
-                  value={currentProduct.latitud?.toString() || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: parseFloat(e.target.value) })}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="longitud">Longitud</Label>
-                <Input
-                  id="longitud"
-                  type="number"
-                  min="-180"
-                  max="180"
-                  step="0.000001"
-                  placeholder="Ej: -3.7038"
-                  value={currentProduct.longitud?.toString() || ''}
-                  onChange={(e) => setCurrentProduct({ ...currentProduct, [e.target.name]: parseFloat(e.target.value) })}
+                  onChange={(e) => setCurrentProduct({ ...currentProduct, dimensions: e.target.value })}
                 />
               </div>
             </div>
-
+            
             <div className="grid gap-2 mt-4">
               <Label>Imágenes del producto</Label>
-              <ImageUpload
+              <ImageUpload 
                 selectedFiles={selectedFiles}
                 setSelectedFiles={setSelectedFiles}
                 existingImages={currentProduct.images || []}
                 onRemoveExistingImage={handleExistingImageRemove}
               />
             </div>
-
-            <div className="flex justify-end space-x-2 mt-4">
+            
+            <div className="flex justify-end mt-4 space-x-2">
               <Button
-                type="button"
                 variant="outline"
                 onClick={() => setIsDialogOpen(false)}
-                disabled={operationLoading}
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={operationLoading}>
-                {operationLoading ? 'Guardando...' : 'Guardar'}
+              <Button 
+                type="submit"
+                disabled={operationLoading}
+              >
+                {operationLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Procesando...
+                  </>
+                ) : dialogMode === 'create' ? 'Crear producto' : 'Actualizar producto'}
               </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
-      </Card>
-    </div>
     </div>
   );
 }
-
-export default ProductDashboard;
