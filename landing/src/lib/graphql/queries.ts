@@ -174,3 +174,64 @@ export const CHECK_PRODUCT_IN_FAVORITES = gql`
     }
   }
 `;
+
+// Consultas y mutaciones para reacciones (likes/dislikes)
+export const GET_PRODUCT_REACTIONS = gql`
+  query GetProductReactions($productId: ID!) {
+    reactions(filters: {product: {documentId: {eq: $productId}}}) {
+      documentId
+      type
+      active
+    }
+  }
+`;
+
+
+
+export const GET_USER_REACTION = gql`
+  query GetUserReaction($productId: ID!) {
+    reactions(
+      filters: {
+        product: { documentId: { eq: $productId } }
+      }
+    ) {
+      documentId
+      type
+      active
+    }
+  }
+`;
+
+export const CREATE_REACTION = gql`
+  mutation CreateReaction($productId: ID!, $userId: ID!, $type: ENUM_REACTION_TYPE!, $active: Boolean!) {
+    createReaction(
+      data: {
+        product: $productId,
+        users_permissions_user: $userId,
+        type: $type,
+        active: $active
+      }
+    ) {
+      documentId
+      type
+      active
+    }
+  }
+`;
+
+
+export const UPDATE_REACTION = gql`
+  mutation UpdateReaction($id: ID!, $type: ENUM_REACTION_TYPE!, $active: Boolean!) {
+    updateReaction(
+      documentId: $id
+      data: {
+        type: $type
+        active: $active
+      }
+    ) {
+      documentId
+      type
+      active
+    }
+  }
+`;

@@ -131,6 +131,12 @@
     },
     "owner_id": {
       "type": "string"
+    },
+    "reactions": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::reaction.reaction",
+      "mappedBy": "product"
     }
   }
 }

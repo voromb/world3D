@@ -12,7 +12,11 @@ import {
   GET_USER_FAVORITES,
   ADD_TO_FAVORITE,
   REMOVE_FROM_FAVORITE,
-  CHECK_PRODUCT_IN_FAVORITES
+  CHECK_PRODUCT_IN_FAVORITES,
+  GET_PRODUCT_REACTIONS,
+  GET_USER_REACTION,
+  CREATE_REACTION,
+  UPDATE_REACTION
 } from './queries';
 import { incrementProductViews, ID_TO_SLUG_MAP } from './utils';
 
@@ -31,6 +35,13 @@ export type {
 
 // Re-exportar la función incrementProductViews y el mapeo directamente
 export { incrementProductViews, ID_TO_SLUG_MAP };
+
+// Interfaz para estadísticas de reacciones
+export interface ReactionStats {
+  likes: number;
+  dislikes: number;
+  userReaction: { id: string; type: 'like' | 'dislike'; active: boolean } | null;
+}
 
 // Interfaz para los resultados de producto transformados
 interface TransformedProduct {
@@ -386,26 +397,234 @@ export async function removeFromFavorites(favoriteId: string): Promise<boolean> 
 export async function checkProductInFavorites(userId: string, productId: string): Promise<string | null> {
   try {
     console.log(`GraphQL: Verificando si el producto ${productId} está en favoritos del usuario ${userId}`);
-    
-    // Llamamos a la consulta sin parámetros para evitar errores
-    const result = await graphqlRequest(CHECK_PRODUCT_IN_FAVORITES);
-    
-    if (result?.data?.favorites && Array.isArray(result.data.favorites)) {
-      // Utilizamos la estructura simple
-      const favorite = result.data.favorites.find((fav: any) => 
-        fav.products && fav.products.some((p: any) => p.documentId === productId)
-      );
-      
+
+    const result = await graphqlRequest(CHECK_PRODUCT_IN_FAVORITES, {});
+
+    if (result?.favorites && Array.isArray(result.favorites)) {
+      // Buscar si el producto está en alguno de los favoritos
+      const favorite = result.favorites.find((fav: { products?: any[] }) => {
+        if (fav.products && Array.isArray(fav.products)) {
+          return fav.products.some((prod: { documentId: string }) => prod.documentId === productId);
+        }
+        return false;
+      });
+
       if (favorite) {
-        console.log(`El producto está en favoritos con ID: ${favorite.documentId}`);
         return favorite.documentId;
       }
     }
-    
-    console.log('El producto no está en favoritos');
+
     return null;
   } catch (error) {
-    console.error('Error al verificar favorito:', error);
+    console.error('Error al verificar si está en favoritos:', error);
     return null;
+  }
+}
+
+// Función para obtener las estadísticas de reacciones de un producto
+export async function getProductReactionStats(
+  productId: string,
+  userId?: string,
+  token?: string
+): Promise<ReactionStats> {
+  try {
+    console.log(`GraphQL: Obteniendo estadísticas de reacciones para producto ${productId}`);
+    
+    const result = await graphqlRequest(GET_PRODUCT_REACTIONS, { productId }, token);
+    
+    // Valores por defecto
+    const stats: ReactionStats = {
+      likes: 0,
+      dislikes: 0,
+      userReaction: null
+    };
+    
+    // Depurar los resultados de la consulta
+    console.log('Resultado completo de GET_PRODUCT_REACTIONS:', JSON.stringify(result, null, 2));
+    
+    // Procesar los resultados para contar likes y dislikes
+    if (result?.reactions && Array.isArray(result.reactions)) {
+      // Listar todas las reacciones para depuración
+      console.log(`Reacciones encontradas (total: ${result.reactions.length}):`, 
+                 result.reactions.map((r: any) => ({ documentId: r.documentId, type: r.type, active: r.active })));
+      
+      // Convertir los valores 'active' a booleanos si son strings
+      const reaccionesProcesadas = result.reactions.map((r: any) => ({
+        ...r,
+        active: typeof r.active === 'string' ? r.active === 'true' : Boolean(r.active)
+      }));
+      
+      console.log('Reacciones procesadas:', reaccionesProcesadas);
+      
+      // Contar likes activos
+      const likesActivos = reaccionesProcesadas.filter(
+        (r: any) => r.type === 'like' && r.active === true
+      );
+      stats.likes = likesActivos.length;
+      console.log(`Likes activos encontrados: ${stats.likes}`, likesActivos);
+      
+      // Contar dislikes activos
+      const dislikesActivos = reaccionesProcesadas.filter(
+        (r: any) => r.type === 'dislike' && r.active === true
+      );
+      stats.dislikes = dislikesActivos.length;
+      console.log(`Dislikes activos encontrados: ${stats.dislikes}`, dislikesActivos);
+      
+      // Si se proporcionó userId, intentamos encontrar la reacción directamente en las reacciones obtenidas
+      // y como respaldo, usamos getUserReaction
+      if (userId) {
+        try {
+          // Primero intentamos encontrar en el resultado que ya tenemos
+          // Esto es más rápido que hacer otra consulta
+          console.log(`Buscando reacción del usuario ${userId} entre ${result.reactions.length} reacciones:`);
+          
+          // Si tenemos reacciones, verificamos si alguna pertenece al usuario a través de una consulta adicional
+          const userReactionResult = await getUserReaction(productId, userId, token);
+          console.log('Reacción del usuario obtenida por separado:', userReactionResult);
+          
+          if (userReactionResult) {
+            stats.userReaction = userReactionResult;
+            console.log('Reacción del usuario final:', stats.userReaction);
+          }
+        } catch (error) {
+          console.error('Error al obtener la reacción del usuario específico:', error);
+        }
+      }
+    }
+    
+    console.log('Estadísticas de reacciones:', stats);
+    return stats;
+    
+  } catch (error) {
+    console.error('Error al obtener estadísticas de reacciones:', error);
+    return {
+      likes: 0,
+      dislikes: 0,
+      userReaction: null
+    };
+  }
+}
+
+// Función para obtener la reacción de un usuario en un producto
+export async function getUserReaction(
+  productId: string,
+  userId: string,
+  token?: string
+): Promise<{ id: string; type: 'like' | 'dislike'; active: boolean } | null> {
+  try {
+    console.log(`GraphQL: Verificando reacción del usuario ${userId} para producto ${productId}`);
+    
+    // Como no podemos filtrar por userId en GraphQL debido a permisos,
+    // obtenemos todas las reacciones del producto 
+    const result = await graphqlRequest<any>(GET_USER_REACTION, { 
+      productId
+    }, token);
+    
+    console.log('Resultado de getUserReaction:', JSON.stringify(result, null, 2));
+    
+    // Como no podemos filtrar por usuario debido a las restricciones de permisos,
+    // esta información debe venir del backend a través de la API REST
+    // Por ahora, verificamos si hay alguna reacción
+    if (result?.reactions && result.reactions.length > 0) {
+      // Aquí deberíamos tener solo la reacción del usuario actual
+      // Pero por ahora obtenemos la primera (esto se debe mejorar en el backend)
+      const userReaction = result.reactions[0];
+      
+      console.log('Reacción encontrada:', userReaction);
+      
+      if (userReaction) {
+        return {
+          id: userReaction.documentId,
+          type: userReaction.type as 'like' | 'dislike',
+          active: userReaction.active
+        };
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error al obtener la reacción del usuario:', error);
+    return null;
+  }
+}
+
+// Función para alternar una reacción (like/dislike)
+export async function toggleReaction(
+  productId: string,
+  userId: string,
+  type: 'like' | 'dislike',
+  token?: string
+): Promise<boolean> {
+  try {
+    console.log(`GraphQL: Alternando reacción ${type} para usuario ${userId} en producto ${productId}`);
+    
+    // Verificar si ya existe una reacción
+    // Asegurarse de que estamos usando documentId para productos y usuarios
+    // Si productId parece ser un ID numérico, lo usamos directamente. Si no, asumimos que es documentId
+    const isNumericProductId = /^\d+$/.test(String(productId));
+    
+    if (isNumericProductId) {
+      console.log(`Usando ID numérico ${productId} para búsqueda, puede causar problemas si Strapi espera documentId`);
+    } else {
+      console.log(`Usando documentId ${productId} para búsqueda`);
+    }
+    
+    const existingReaction = await getUserReaction(productId, userId, token);
+    console.log('Reacción existente:', existingReaction);
+    
+    if (existingReaction) {
+      // Si ya existe, actualizar
+      let active: boolean;
+      let newType: 'like' | 'dislike';
+      
+      if (existingReaction.type === type) {
+        // Mismo tipo, alternar estado activo
+        active = !existingReaction.active;
+        newType = type;
+      } else {
+        // Diferente tipo, activar y cambiar tipo
+        active = true;
+        newType = type;
+      }
+      
+      console.log(`Actualizando reacción: id=${existingReaction.id}, type=${newType}, active=${active}`);
+      
+      const updateResult = await graphqlRequest<any>(UPDATE_REACTION, {
+        id: existingReaction.id,
+        type: newType,
+        active
+      }, token);
+      
+      console.log('Resultado de actualización:', JSON.stringify(updateResult, null, 2));
+      return !!updateResult?.updateReaction;
+    } else {
+      // Si no existe, crear una nueva
+      console.log(`Creando nueva reacción: productId=${productId}, userId=${userId}, type=${type}`);
+      
+      const createResult = await graphqlRequest<any>(CREATE_REACTION, {
+        productId,
+        userId,
+        type,
+        active: true
+      }, token);
+      
+      console.log('Resultado de creación:', JSON.stringify(createResult, null, 2));
+      
+      // Verificar si la creación fue exitosa - la respuesta de Strapi contiene datos en createReaction
+      const success = createResult && 
+                     createResult.data && 
+                     createResult.data.createReaction && 
+                     createResult.data.createReaction.documentId;
+      
+      console.log(`Reacción creada exitosamente: ${success ? 'Sí' : 'No'}`);
+      if (success) {
+        console.log(`ID de la nueva reacción: ${createResult.data.createReaction.documentId}`);
+      }
+      
+      return success;
+    }
+  } catch (error) {
+    console.error('Error al alternar reacción:', error);
+    return false;
   }
 }

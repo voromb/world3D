@@ -10,6 +10,7 @@ import ProductGrid from "@/components/ui/product/ProductGrid";
 import dynamic from "next/dynamic";
 import { updateProductViewsGraphQL, submitRatingGraphQL, addToFavorites, checkProductInFavorites, removeFromFavorites } from "@/lib/graphql";
 import { useGraphQLSetting } from "../../../lib/useGraphQLSetting";
+import ReactionButtons from "@/components/ReactionButtons";
 
 // Importación dinámica del componente de mapa para evitar problemas con SSR
 const ProductMap = dynamic(() => import("@/components/ui/map/ProductMap"), {
@@ -1275,6 +1276,12 @@ export default function ProductDetailPage() {
                   </svg>
                   {isFavorite ? 'Quitar de favoritos' : 'Añadir a favoritos'}
                 </button>
+                
+                {/* Sistema de Likes y Dislikes */}
+                <div className="mt-4 border-t pt-4">
+                  <h3 className="text-lg font-semibold mb-2">¿Te gusta este producto?</h3>
+                  <ReactionButtons productId={product.id} productDocumentId={product.documentId} />
+                </div>
               </div>
             </div>
           </div>

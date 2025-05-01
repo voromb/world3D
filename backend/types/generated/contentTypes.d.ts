@@ -589,6 +589,7 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     productName: Schema.Attribute.String;
     provinceName: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
+    reactions: Schema.Attribute.Relation<'oneToMany', 'api::reaction.reaction'>;
     remaininWarranty: Schema.Attribute.String;
     shipping_types: Schema.Attribute.Relation<
       'manyToMany',
@@ -608,6 +609,44 @@ export interface ApiProductProduct extends Struct.CollectionTypeSchema {
     >;
     views: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<0>;
     weight: Schema.Attribute.Decimal;
+  };
+}
+
+export interface ApiReactionReaction extends Struct.CollectionTypeSchema {
+  collectionName: 'reactions';
+  info: {
+    displayName: 'reaction';
+    pluralName: 'reactions';
+    singularName: 'reaction';
+  };
+  options: {
+    draftAndPublish: true;
+  };
+  attributes: {
+    active: Schema.Attribute.Boolean;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    Descripcion: Schema.Attribute.String;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::reaction.reaction'
+    > &
+      Schema.Attribute.Private;
+    nombre: Schema.Attribute.String;
+    product: Schema.Attribute.Relation<'manyToOne', 'api::product.product'>;
+    publishedAt: Schema.Attribute.DateTime;
+    timestamp: Schema.Attribute.DateTime;
+    Tipo: Schema.Attribute.String;
+    type: Schema.Attribute.Enumeration<['like', 'dislike']>;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    users_permissions_user: Schema.Attribute.Relation<
+      'manyToOne',
+      'plugin::users-permissions.user'
+    >;
   };
 }
 
@@ -1142,6 +1181,7 @@ export interface PluginUsersPermissionsUser
     products: Schema.Attribute.Relation<'manyToMany', 'api::product.product'>;
     provider: Schema.Attribute.String;
     publishedAt: Schema.Attribute.DateTime;
+    reactions: Schema.Attribute.Relation<'oneToMany', 'api::reaction.reaction'>;
     resetPasswordToken: Schema.Attribute.String & Schema.Attribute.Private;
     role: Schema.Attribute.Relation<
       'manyToOne',
@@ -1176,6 +1216,7 @@ declare module '@strapi/strapi' {
       'api::image-general.image-general': ApiImageGeneralImageGeneral;
       'api::product-rating.product-rating': ApiProductRatingProductRating;
       'api::product.product': ApiProductProduct;
+      'api::reaction.reaction': ApiReactionReaction;
       'api::shipping-type.shipping-type': ApiShippingTypeShippingType;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;

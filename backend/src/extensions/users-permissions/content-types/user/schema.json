@@ -91,6 +91,12 @@
     "userId": {
       "type": "uid",
       "targetField": "username"
+    },
+    "reactions": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::reaction.reaction",
+      "mappedBy": "users_permissions_user"
     }
   }
 }
