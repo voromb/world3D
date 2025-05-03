@@ -1,12 +1,18 @@
 // Configuración de Stripe para el servidor
 import Stripe from 'stripe';
 
-// Asegúrate de que esto esté en un archivo .env.local
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY || 
-                        'sk_test_4eC39HqLyjWDarjtT1zdp7dc'; // Usa tu propia clave de prueba
+// Verificar que la clave de API de Stripe está configurada en las variables de entorno
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY || '';
+
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.warn('⚠️ La clave secreta de Stripe no está configurada en el archivo .env.local');
+  console.warn('La funcionalidad de pagos estará deshabilitada o en modo de simulación');
+  // Estamos usando una cadena vacía como valor por defecto para satisfacer el tipado,
+  // pero el código debería manejar esto apropiadamente
+}
 
 export const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: '2023-10-16', // Usar la versión más reciente disponible
+  apiVersion: '2023-10-16' as any, // Usar la versión más reciente disponible
 });
 
 // Función para calcular el precio en centavos (Stripe usa centavos)
