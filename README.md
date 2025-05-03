@@ -25,6 +25,8 @@ Un proyecto 3D que combina Next.js para el frontend y Strapi para el backend, co
 - `Auth` - He utilizado https://next-auth.js.org/configuration/pages.
 - `Squeleton` - He utilizado https://ui.shadcn.com/docs/components/skeleton
 - `carousel` - He utilizado https://ui.shadcn.com/docs/components/carousel
+- `carrito`- he utiladao https://zustand.docs.pmnd.rs/guides/nextjs
+- `pasarela de pago` - he utilizado https://stripe.com
 - `PosgreSQl` - Para la base de datos he utilizado PosgreSQl en un contenedor Docker
 
 

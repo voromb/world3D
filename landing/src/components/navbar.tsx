@@ -2,7 +2,8 @@
 
 "use client";
 
-import { ShoppingCart, Heart } from "lucide-react";
+import { Heart } from "lucide-react";
+import { CartDrawer } from "./cart/cart-drawer";
 import { useRouter } from "next/navigation";
 import MenuList from "./menu-list";
 import ItemsMenuMobile from "./items-menu-mobile";
@@ -26,11 +27,7 @@ const Navbar = () => {
         <ItemsMenuMobile />
       </div>
       <div className="flex item-center justify-between gap-2 sm:gap-7">
-        <ShoppingCart
-          strokeWidth="1"
-          className="cursor-pointer"
-          onClick={() => router.push("/cart")}
-        />
+        <CartDrawer />
 
         <Heart
           strokeWidth="1"

@@ -137,6 +137,18 @@
       "relation": "oneToMany",
       "target": "api::reaction.reaction",
       "mappedBy": "product"
+    },
+    "carts": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::cart.cart",
+      "mappedBy": "product"
+    },
+    "cart_items": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::cart-item.cart-item",
+      "mappedBy": "products"
     }
   }
 }

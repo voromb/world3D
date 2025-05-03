@@ -2,8 +2,11 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ProductType } from "@/types";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ShoppingCart } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useCartStore } from "@/lib/store/cart-store";
 
 interface ProductCardProps {
   product: ProductType;
@@ -12,11 +15,11 @@ interface ProductCardProps {
 const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [hasValidImages, setHasValidImages] = useState(false);
-  const [imageUrls, setImageUrls] = useState<string[]>(['/placeholder.jpg']);
+  const [imageUrls, setImageUrls] = useState<string[]>(['/placeholder.svg']);
 
   // Función para generar URLs de imágenes completas
   const getImageUrl = (imagePath: string): string => {
-    if (!imagePath) return "/placeholder.jpg";
+    if (!imagePath) return "/placeholder.svg";
     if (imagePath.startsWith("http")) return imagePath;
     return `${process.env.NEXT_PUBLIC_BACKEND_URL}${imagePath}`;
   };
@@ -49,13 +52,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           } else if (image.formats) {
             // Intentar obtener diferentes tamaños, preferir thumbnail por rendimiento
             const url = image.formats.thumbnail?.url || image.formats.small?.url || image.formats.medium?.url;
-            return url ? getImageUrl(url) : '/placeholder.jpg';
+            return url ? getImageUrl(url) : '/placeholder.svg';
           }
-          return '/placeholder.jpg';
+          return '/placeholder.svg';
         });
         
         // Filtrar cualquier placeholder
-        const validUrls = urls.filter(url => url !== '/placeholder.jpg');
+        const validUrls = urls.filter(url => url !== '/placeholder.svg');
         
         if (validUrls.length > 0) {
           setImageUrls(validUrls);
@@ -63,15 +66,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           setCurrentImageIndex(0); // Reiniciar al índice 0 cuando cambian las imágenes
           console.log(`${validUrls.length} imágenes cargadas para ${product.productName}`);
         } else {
-          setImageUrls(['/placeholder.jpg']);
+          setImageUrls(['/placeholder.svg']);
           setHasValidImages(false);
         }
       } else {
-        setImageUrls(['/placeholder.jpg']);
+        setImageUrls(['/placeholder.svg']);
         setHasValidImages(false);
       }
     } catch (error) {
-      setImageUrls(['/placeholder.jpg']);
+      setImageUrls(['/placeholder.svg']);
       setHasValidImages(false);
       console.error(`Error al procesar imágenes para ${product.productName}:`, error);
     }
@@ -80,22 +83,43 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   // Función para manejar errores de carga de imágenes
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     console.error(`Error cargando imagen para ${product.productName}`);
-    e.currentTarget.src = '/placeholder.jpg';
+    e.currentTarget.src = '/placeholder.svg';
+  };
+
+  // Función para añadir al carrito
+  const { addItem } = useCartStore();
+  
+  const handleAddToCart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    addItem({
+      documentId: String(product.documentId || product.id),
+      productName: product.productName,
+      price: Number(product.price) || 0,
+      quantity: 1,
+      slug: product.slug,
+      imageUrl: imageUrls[0] !== '/placeholder.svg' ? imageUrls[0] : undefined
+    });
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow block relative group">
-
-      <Link href={`/shop/${product.slug}`} className="block">
-        {/* Contenedor de imágenes con carrusel */}
+    <div className="bg-white rounded-lg shadow-sm border overflow-hidden group hover:shadow-md transition-shadow">
+      <div className="block">
         <div className="relative overflow-hidden h-48 bg-gray-100 rounded-t-lg">
           {/* Imagen principal */}
-          <img
-            src={imageUrls[currentImageIndex]}
-            alt={`${product.productName} - Imagen ${currentImageIndex + 1}`}
-            className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300"
-            onError={handleImageError}
-          />
+          <div className="relative w-full h-full">
+            <Image
+              src={imageUrls[currentImageIndex]}
+              alt={`${product.productName} - Imagen ${currentImageIndex + 1}`}
+              className="object-cover transition-transform group-hover:scale-105 duration-300"
+              fill
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              priority={false}
+              unoptimized={imageUrls[currentImageIndex].includes('placeholder.svg')}
+              onError={handleImageError}
+            />
+          </div>
           
           {/* Controles del carrusel - Solo visibles si hay más de una imagen */}
           {hasValidImages && imageUrls.length > 1 && (
@@ -142,19 +166,21 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
         </div>
 
         <div className="p-4">
-          <h3
-            className="font-semibold text-lg mb-2 line-clamp-2"
-            title={product.productName}
-          >
-            {product.productName}
-          </h3>
+          <Link href={`/productos/${product.slug}`} className="block">
+            <h3
+              className="font-semibold text-lg mb-2 line-clamp-2 hover:text-blue-600 transition-colors"
+              title={product.productName}
+            >
+              {product.productName}
+            </h3>
+          </Link>
 
           <div className="flex justify-between items-center mb-2">
             <span className="text-blue-600 font-bold">{product.price}€</span>
             <span className="text-sm text-gray-500">{product.cityName}</span>
           </div>
 
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1 mb-3">
             {product.categories?.map((category) => (
               <span
                 key={category.id}
@@ -170,8 +196,18 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
               </span>
             )}
           </div>
+          
+          <Button
+            onClick={handleAddToCart}
+            variant="outline"
+            className="w-full flex items-center justify-center gap-2 mt-2"
+            size="sm"
+          >
+            <ShoppingCart className="h-4 w-4" />
+            <span>Añadir al carrito</span>
+          </Button>
         </div>
-      </Link>
+      </div>
     </div>
   );
 };

@@ -11,6 +11,9 @@ import dynamic from "next/dynamic";
 import { updateProductViewsGraphQL, submitRatingGraphQL, addToFavorites, checkProductInFavorites, removeFromFavorites } from "@/lib/graphql";
 import { useGraphQLSetting } from "../../../lib/useGraphQLSetting";
 import ReactionButtons from "@/components/ReactionButtons";
+import { useCartStore } from "@/lib/store/cart-store";
+import { ShoppingCart } from "lucide-react";
+import { toast } from "react-hot-toast";
 
 // Importación dinámica del componente de mapa para evitar problemas con SSR
 const ProductMap = dynamic(() => import("@/components/ui/map/ProductMap"), {
@@ -1252,8 +1255,24 @@ export default function ProductDetailPage() {
               </div>
 
               <div className="space-y-4">
-                <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors">
-                  Contactar con el vendedor
+                <button 
+                  onClick={() => {
+                    // Añadir al carrito utilizando la tienda de Zustand
+                    const { addItem } = useCartStore.getState();
+                    addItem({
+                      documentId: String(product.documentId || product.id),
+                      productName: product.productName,
+                      price: Number(product.price) || 0,
+                      quantity: 1,
+                      slug: product.slug,
+                      imageUrl: product.images?.[0]?.url ? `${process.env.NEXT_PUBLIC_BACKEND_URL}${product.images[0].url}` : undefined
+                    });
+                    toast.success('¡Producto añadido al carrito!');
+                  }}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <ShoppingCart className="h-5 w-5" />
+                  Añadir al carrito
                 </button>
                 <button 
                   onClick={handleToggleFavorite}

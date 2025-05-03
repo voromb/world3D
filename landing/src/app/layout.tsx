@@ -8,6 +8,8 @@ import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 import { Providers } from "@/components/providers"; // Importamos el Provider de Apollo
 import 'leaflet/dist/leaflet.css';
+import { Toaster } from "react-hot-toast";
+import { CartInitializerWrapper } from "@/components/cart/client-components";
 
 const urbanist = Urbanist({
   subsets: ["latin"],
@@ -19,6 +21,8 @@ export const metadata: Metadata = {
   description: "Welcome to world3d by Voro",
 };
 
+// El inicializador del carrito ahora está en un componente cliente
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,11 +32,12 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${urbanist.className}`}>
         <Providers>
-          {" "}
           {/* Envolvemos todo el contenido con el Provider */}
+          <CartInitializerWrapper />
           <Navbar />
           {children}
           <Footer />
+          <Toaster position="top-center" />
         </Providers>
       </body>
     </html>

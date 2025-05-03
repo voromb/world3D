@@ -5,7 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { User, LogOut, Heart, Settings, ChevronDown, LayoutDashboard } from 'lucide-react';
+import { User, LogOut, Heart, Settings, ChevronDown, LayoutDashboard, ShoppingBag } from 'lucide-react';
 import { getGravatarUrl } from '@/utils/gravatar';
 
 
@@ -107,6 +107,15 @@ export default function UserMenu({ router }: UserMenuProps) {
           >
             <Heart size={16} className="mr-2" />
             Mis favoritos
+          </Link>
+
+          <Link 
+            href="/dashboard/orders" 
+            className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+            onClick={() => setMenuOpen(false)}
+          >
+            <ShoppingBag size={16} className="mr-2" />
+            Mis pedidos
           </Link>
 
           <button
