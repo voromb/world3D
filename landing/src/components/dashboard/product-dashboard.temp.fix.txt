@@ -1,0 +1,11 @@
+Revisar el final del archivo product-dashboard.tsx:
+Las últimas 5 líneas deberían ser:
+
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

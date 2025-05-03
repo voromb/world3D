@@ -11,6 +11,22 @@ export const GET_PRODUCTS_FOR_DASHBOARD = `
       price
       active
       owner_id
+      slug
+      isFeatured
+      weight
+      dimensions
+      dateManufactured
+      remaininWarranty
+      State
+      cityName
+      provinceName
+      countryName
+      directionName
+      latitud
+      longitud
+      createBy
+      createdAt
+      updatedAt
     }
   }
 `;
@@ -34,14 +50,19 @@ export const CREATE_PRODUCT = `
   }
 `;
 
-// Versión más simple posible para evitar errores
+// NOTA: El DELETE_PRODUCT está declarado más abajo
+
+// Versión optimizada para Strapi v5 con los campos esenciales
 export const SIMPLIFIED_CREATE_PRODUCT = `
   mutation CreateProduct($data: ProductInput!) {
     createProduct(data: $data) {
-      id
       documentId
       productName
       price
+      slug
+      description
+      active
+      owner_id
     }
   }
 `;
