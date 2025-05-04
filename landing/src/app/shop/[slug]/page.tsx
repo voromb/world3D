@@ -27,7 +27,7 @@ const ProductMap = dynamic(() => import("@/components/ui/map/ProductMap"), {
 
 // Función auxiliar para generar URLs de imágenes completas
 const getImageUrl = (imagePath: string): string => {
-  if (!imagePath) return "/placeholder.jpg";
+  if (!imagePath) return "/placeholder.svg";
   if (imagePath.startsWith("http")) return imagePath;
   return `${process.env.NEXT_PUBLIC_BACKEND_URL}${imagePath}`;
 };
@@ -1059,7 +1059,7 @@ export default function ProductDetailPage() {
                         console.error(
                           `Error loading image: ${product.images[selectedImage].url}`
                         );
-                        e.currentTarget.src = "/placeholder.jpg";
+                        e.currentTarget.src = "/placeholder.svg";
                       }}
                     />
                   </div>
@@ -1082,7 +1082,7 @@ export default function ProductDetailPage() {
                             alt={`${product.productName} - Imagen ${index + 1}`}
                             className="absolute inset-0 w-full h-full object-cover"
                             onError={(e) => {
-                              e.currentTarget.src = "/placeholder.jpg";
+                              e.currentTarget.src = "/placeholder.svg";
                             }}
                           />
                         </button>

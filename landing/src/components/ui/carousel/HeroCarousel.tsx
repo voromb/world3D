@@ -48,7 +48,7 @@ const HeroCarousel: React.FC<HeroCarouselProps> = ({ images }) => {
       {/* Imagen de fondo */}
       <div className="absolute inset-0 w-full h-full">
         <Image
-  src={currentImage.url ?? "/placeholder.jpg"}
+  src={currentImage.url ?? "/placeholder.svg"}
   alt={currentImage.imageGeneralName ?? "Imagen de impresora 3D"}
   fill
   className="object-cover"

@@ -24,7 +24,7 @@ const defaultIcon = () => {
 
 // Función para obtener URL de imagen completa
 const getImageUrl = (product: ProductType, index: number = 0): string => {
-  if (!product.images || product.images.length === 0) return "/placeholder.jpg";
+  if (!product.images || product.images.length === 0) return "/placeholder.svg";
   const image = product.images[index];
   if (image.url.startsWith("http")) return image.url;
   return `${process.env.NEXT_PUBLIC_BACKEND_URL}${image.url}`;

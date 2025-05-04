@@ -34,6 +34,7 @@ const ME_QUERY = `
 `;
 
 const handler = NextAuth({
+  secret: process.env.NEXTAUTH_SECRET || "secret-key-for-development-only",
   providers: [
     CredentialsProvider({
       name: "Credentials",

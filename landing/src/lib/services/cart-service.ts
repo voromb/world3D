@@ -16,10 +16,20 @@ export class CartService {
     return CartService.instance;
   }
 
-  // Obtener o crear un carrito para el usuario actual
+  // Obtener o crear un carrito para el usuario autenticado
   async getOrCreateCart(): Promise<number | null> {
     try {
+      // 1. Intentamos obtener la sesión del usuario
       const session = await getSession();
+      
+      console.log('Sesión obtenida:', session ? 'Válida' : 'Nula', 'Usuario ID:', session?.user?.id || 'No disponible');
+      
+      if (!session?.user?.id) {
+        console.log('No hay sesión de usuario, usando carrito temporal');
+        // Si no hay sesión, retornamos null para manejar el caso en el cliente
+        return null;
+      }
+
       const userId = session?.user?.id;
       
       // Opciones para la solicitud
@@ -154,9 +164,9 @@ export class CartService {
         };
       }
 
-      // Obtener items del carrito
+      // Obtener items del carrito con sus imágenes (usando populate más profundo)
       const response = await fetch(
-        `${API_URL}/api/cart-items?filters[carts][id][$eq]=${cartId}&populate=products`,
+        `${API_URL}/api/cart-items?filters[carts][id][$eq]=${cartId}&populate[products][populate][0]=images`,
         requestOptions
       );
       
@@ -168,10 +178,21 @@ export class CartService {
           const product = item.attributes.products.data;
           let imageUrl = undefined;
           
+          // Mejorar la obtención de imágenes con mejor manejo de casos
           if (product.attributes.images && 
               product.attributes.images.data && 
               product.attributes.images.data.length > 0) {
-            imageUrl = product.attributes.images.data[0].attributes.url;
+            // Obtenemos la primera imagen del producto
+            const imageData = product.attributes.images.data[0];
+            if (imageData && imageData.attributes && imageData.attributes.url) {
+              imageUrl = imageData.attributes.url;
+              console.log('Imagen encontrada para producto:', product.attributes.title, imageUrl);
+            }
+          }
+          
+          // Si no se encontró ninguna imagen, registrarlo para depuración
+          if (!imageUrl) {
+            console.log('No se encontró imagen para el producto:', product.attributes.title, 'Estructura recibida:', JSON.stringify(product.attributes.images));
           }
             
           return {

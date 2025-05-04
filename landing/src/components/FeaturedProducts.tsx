@@ -135,7 +135,7 @@ const FeaturedProducts: React.FC = () => {
                               className="max-h-full object-contain"
                               onError={(e) => {
                                 console.error(`Error cargando imagen: ${product.images[0].url}`);
-                                e.currentTarget.src = '/placeholder.jpg';
+                                e.currentTarget.src = '/placeholder.svg';
                               }}
                             />
                           ) : (

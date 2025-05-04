@@ -25,25 +25,101 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Función para cargar pedidos
+    // Función para cargar pedidos usando nuestra API personalizada
     const loadOrders = async () => {
-      if (status === 'authenticated') {
+      try {
+        setLoading(true);
+        
+        if (status !== 'authenticated' || !session?.user?.id) {
+          console.log('Usuario no autenticado o sin ID');
+          setLoading(false);
+          return;
+        }
+        
+        console.log('Cargando pedidos para el usuario...');
+        
+        // Usar nuestra API personalizada en lugar del servicio directo
+        const response = await fetch('/api/orders', {
+          headers: {
+            'x-user-id': session.user.id,
+          }
+        });
+        const data = await response.json();
+        
+        console.log('Respuesta de API:', data);
+        
+        if (data?.data && data.data.length > 0) {
+          // Transformar los datos al formato que espera nuestro componente
+          const transformedOrders = data.data.map((order: any) => {
+            // Obtener los items del pedido
+            const items = order.attributes?.items?.data?.map((item: any) => {
+              return {
+                id: item.id,
+                productName: item.attributes.productName,
+                price: item.attributes.price,
+                quantity: item.attributes.quantity,
+                slug: item.attributes.slug,
+                imageUrl: item.attributes.imageUrl || '/placeholder.svg'
+              };
+            }) || [];
+            
+            return {
+              id: order.id,
+              orderNumber: order.attributes.orderNumber || `ORD-${order.id}`,
+              date: new Date(order.attributes.createdAt).toLocaleDateString('es-ES'),
+              status: order.attributes.status || 'pendiente',
+              total: order.attributes.total || 0,
+              items: items,
+              shippingAddress: {
+                name: order.attributes.shippingName || session?.user?.name || 'Usuario',
+                address: order.attributes.shippingAddress || 'Dirección no especificada',
+                city: order.attributes.shippingCity || 'Ciudad no especificada',
+                postalCode: order.attributes.shippingPostalCode || ''
+              },
+              paymentMethod: order.attributes.paymentMethod || 'Tarjeta de crédito'
+            };
+          });
+          
+          console.log('Pedidos transformados:', transformedOrders);
+          setOrders(transformedOrders);
+          
+          // Mostrar notificación solo para pedidos reales (no simulados)
+          if (transformedOrders.length > 0 && !(String(transformedOrders[0].id).includes('mock'))) {
+            toast.success(`Se han encontrado ${transformedOrders.length} pedidos reales`);
+          }
+        } else {
+          // Como último recurso, usar el servicio antiguo
+          console.log('No se encontraron pedidos en la API, usando método de respaldo');
+          const userOrders = await orderService.getUserOrders();
+          console.log('Pedidos cargados con método de respaldo:', userOrders.length);
+          setOrders(userOrders);
+        }
+      } catch (error) {
+        console.error('Error al cargar pedidos:', error);
+        
+        // Intentar método de respaldo
         try {
+          console.log('Error al usar API, intentando método de respaldo...');
           const userOrders = await orderService.getUserOrders();
           setOrders(userOrders);
-        } catch (error) {
-          console.error('Error al cargar pedidos:', error);
+        } catch (backupError) {
+          console.error('Error en método de respaldo:', backupError);
           toast.error('No se pudieron cargar los pedidos');
         }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     
-    // Cargamos los pedidos después de un pequeño retraso para mostrar el estado de carga
-    setTimeout(() => {
+    // Solo intentamos cargar pedidos si el usuario está autenticado
+    if (status === 'authenticated') {
       loadOrders();
-    }, 1000);
-  }, [status]);
+    } else if (status === 'unauthenticated') {
+      // Si no está autenticado, dejamos de cargar
+      setLoading(false);
+    }
+    // No hacemos nada si status es 'loading', esperamos a que cambie
+  }, [status, session]);
 
   // Formatear precio en euros
   const formatPrice = (price: number) => {
@@ -149,25 +225,32 @@ export default function OrdersPage() {
                   <h3 className="font-semibold mb-4">Productos</h3>
                   <div className="space-y-4">
                     {order.items && order.items.map((item) => (
-                      <div key={item.id} className="flex items-center gap-4">
-                        <div className="h-16 w-16 bg-gray-100 rounded-md overflow-hidden relative flex-shrink-0">
-                          {item.imageUrl ? (
-                            <Image
-                              src={item.imageUrl}
-                              alt={item.productName}
-                              fill
-                              className="object-cover"
-                            />
-                          ) : (
-                            <div className="flex items-center justify-center h-full w-full text-gray-400">
-                              <Package className="h-8 w-8" />
-                            </div>
-                          )}
+                      <div key={item.id} className="flex items-center space-x-3">
+                        <div className="relative w-16 h-16 overflow-hidden rounded-md shadow-sm bg-gray-50">
+                          <Image 
+                            src={item.imageUrl || '/placeholder.svg'}
+                            alt={item.productName}
+                            fill
+                            className="object-cover"
+                            onError={(e) => {
+                              // Si falla la carga, usar imagen de respaldo
+                              (e.target as HTMLImageElement).src = '/placeholder.svg';
+                            }}
+                          />
                         </div>
-                        <div className="flex-grow">
-                          <p className="font-medium">{item.productName}</p>
-                          <div className="flex items-center text-sm text-gray-500">
-                            <span>{formatPrice(item.price)} x {item.quantity}</span>
+                        
+                        <div className="flex-1">
+                          <p className="font-medium text-base">{item.productName}</p>
+                          <div className="flex flex-wrap items-center mt-1 gap-2">
+                            <span className="text-sm font-semibold text-blue-600">
+                              {formatPrice(item.price)}
+                            </span>
+                            <span className="text-xs px-2 py-0.5 bg-gray-100 rounded-full">
+                              {item.quantity} {item.quantity > 1 ? 'unidades' : 'unidad'}
+                            </span>
+                            {item.slug && (
+                              <Link href={`/shop/${item.slug}`} className="text-xs text-blue-500 hover:underline">Ver producto</Link>
+                            )}
                           </div>
                         </div>
                         <div className="text-right">

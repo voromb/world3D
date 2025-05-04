@@ -2,6 +2,43 @@
 
 import { gql } from '@apollo/client';
 
+// Consulta para obtener los pedidos del usuario actual usando la estructura correcta del API
+// Eliminamos la consulta GraphQL que usaba directivas @rest no soportadas
+// Ahora usaremos directamente la API REST para consultar las órdenes
+
+// Consulta alternativa para obtener pedidos usando el campo 'user'
+export const GET_USER_ORDERS_ALT = gql`
+  query GetUserOrdersAlt($userId: ID!) {
+    orders_connection(
+      filters: { user: { id: { eq: $userId } } }
+      sort: "createdAt:desc"
+    ) {
+      nodes {
+        documentId
+        orderNumber
+        createdAt
+        status
+        total
+        shippingName
+        shippingAddress
+        shippingCity
+        shippingPostalCode
+        paymentMethod
+        order_items_connection {
+          nodes {
+            documentId
+            productName
+            price
+            quantity
+            slug
+            imageUrl
+          }
+        }
+      }
+    }
+  }
+`;
+
 // Consultas para productos - Estructura correcta para Strapi v5
 export const FIND_PRODUCT_BY_SLUG = gql`
 query FindProductBySlug($slug: String!) {

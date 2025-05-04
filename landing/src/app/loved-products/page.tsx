@@ -77,7 +77,7 @@ const FavoritesPage = () => {
     if (images && images.length > 0 && images[0].url) {
       return images[0].url;
     }
-    return "/placeholder.jpg"; // Imagen por defecto
+    return "/placeholder.svg"; // Imagen por defecto
   };
 
   // Función para extraer productos de todos los favoritos

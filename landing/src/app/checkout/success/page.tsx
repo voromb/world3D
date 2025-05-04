@@ -17,17 +17,33 @@ export default function CheckoutSuccessPage() {
   useEffect(() => {
     // En producción, aquí deberías verificar el estado del pago con la API de Stripe
     if (sessionId) {
-      // Simulamos la carga de detalles del pedido
-      setTimeout(() => {
-        setOrderDetails({
-          id: `ORD-${Math.floor(Math.random() * 10000)}`,
-          date: new Date().toLocaleDateString('es-ES'),
-        });
-        setLoading(false);
+      // Importamos el servicio de pagos para procesar el pago
+      import('@/lib/services/payment-service').then(({ paymentService }) => {
+        console.log('Procesando pago exitoso para session_id:', sessionId);
         
-        // Limpiar el carrito después de una compra exitosa
-        clearCart();
-      }, 1500);
+        // Llamar al servicio de pagos para procesar el pago y guardar el pedido en Strapi
+        paymentService.processSuccessfulPayment(sessionId).then(success => {
+          if (success) {
+            console.log('Pago procesado correctamente, pedido guardado en Strapi');
+            setOrderDetails({
+              id: sessionId,
+              date: new Date().toLocaleDateString('es-ES'),
+            });
+          } else {
+            console.error('Error al procesar el pago exitoso');
+            // Aún mostramos algo aunque falle
+            setOrderDetails({
+              id: `ORD-${Math.floor(Math.random() * 10000)}`,
+              date: new Date().toLocaleDateString('es-ES'),
+              error: 'Hubo un problema al procesar tu pedido. Por favor, contacta con soporte.'
+            });
+          }
+          
+          setLoading(false);
+          // Limpiar el carrito después de una compra exitosa
+          clearCart();
+        });
+      });
     } else {
       setLoading(false);
     }

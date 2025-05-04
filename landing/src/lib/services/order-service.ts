@@ -48,51 +48,120 @@ export class OrderService {
       const session = await getSession();
       const userId = session?.user?.id;
       
-      // Opciones para la solicitud
+      console.log('Session actual:', session?.user?.id, session?.user?.name);
+      console.log('JWT disponible:', session?.jwt ? 'Sí' : 'No');
+
+      // Si no hay sesión de usuario, usamos datos de ejemplo
+      if (!userId) {
+        console.log('No hay ID de usuario, usando datos de ejemplo');
+        return this.getMockOrders();
+      }
+      
+      // Opciones para la solicitud con autenticación
       const requestOptions: RequestInit = {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
       };
-
-      // Añadir token de autenticación
+      
+      // Añadir token de autenticación si el usuario está autenticado
       if (session?.jwt) {
         requestOptions.headers = {
           ...requestOptions.headers,
           Authorization: `Bearer ${session.jwt}`,
         };
       }
-
-      let url = `${API_URL}/api/orders?populate=*`;
-      if (userId) {
-        // Si el usuario está autenticado, filtramos por su ID
-        url = `${API_URL}/api/orders?filters[users_permissions_user][id][$eq]=${userId}&populate=*`;
-      }
       
-      console.log('Consultando pedidos en:', url);
+      console.log('Buscando pedidos para usuario ID:', userId);
       
-      // Obtener pedidos
-      const response = await fetch(url, requestOptions);
-      const data = await response.json();
+      // Intentar diferentes enfoques para encontrar los pedidos del usuario
+      let orderData: any = null;
+      let ordersFound = false;
       
-      console.log('Respuesta de pedidos:', data);
-      
-      if (!data.data || data.data.length === 0) {
-        // Si no hay pedidos, intentamos obtener todos los pedidos sin filtrar por usuario
-        // Esto es útil para fines de demostración/examen
-        const allOrdersResponse = await fetch(`${API_URL}/api/orders?populate=*`, requestOptions);
-        const allOrdersData = await allOrdersResponse.json();
+      // Enfoque 1: Intentar con users_permissions_user
+      try {
+        const url1 = `${API_URL}/api/orders?filters[users_permissions_user][id][$eq]=${userId}&populate[items][populate]=*&populate=*`;
+        console.log('Consultando con users_permissions_user:', url1);
         
-        if (!allOrdersData.data || allOrdersData.data.length === 0) {
-          return this.getMockOrders(); // Sin pedidos, devolver ejemplos
+        const response1 = await fetch(url1, requestOptions);
+        const data1 = await response1.json();
+        
+        if (data1?.data?.length > 0) {
+          console.log(`Encontrados ${data1.data.length} pedidos con users_permissions_user`);
+          orderData = data1;
+          ordersFound = true;
+        } else {
+          console.log('No se encontraron pedidos con users_permissions_user');
         }
-        
-        data.data = allOrdersData.data;
+      } catch (err) {
+        console.error('Error al buscar pedidos con users_permissions_user:', err);
       }
+      
+      // Enfoque 2: Si no encontramos pedidos con el primer campo, intentamos con 'user'
+      if (!ordersFound) {
+        try {
+          const url2 = `${API_URL}/api/orders?filters[user][id][$eq]=${userId}&populate[items][populate]=*&populate=*`;
+          console.log('Consultando con user:', url2);
+          
+          const response2 = await fetch(url2, requestOptions);
+          const data2 = await response2.json();
+          
+          if (data2?.data?.length > 0) {
+            console.log(`Encontrados ${data2.data.length} pedidos con user`);
+            orderData = data2;
+            ordersFound = true;
+          } else {
+            console.log('No se encontraron pedidos con user');
+          }
+        } catch (err) {
+          console.error('Error al buscar pedidos con user:', err);
+        }
+      }
+      
+      // Enfoque 3: Obtener todos los pedidos y filtrar manualmente
+      if (!ordersFound) {
+        const urlAll = `${API_URL}/api/orders?populate[items][populate]=*&populate=*`;
+        console.log('Buscando todos los pedidos:', urlAll);
+        
+        try {
+          const responseAll = await fetch(urlAll, requestOptions);
+          const dataAll = await responseAll.json();
+          
+          if (dataAll?.data?.length > 0) {
+            // Intentar filtrar manualmente
+            const filteredOrders = dataAll.data.filter((order: any) => {
+              const orderUserId = 
+                order.attributes?.users_permissions_user?.data?.id || 
+                order.attributes?.user?.data?.id;
+              return orderUserId === userId;
+            });
+            
+            if (filteredOrders.length > 0) {
+              console.log(`Encontrados ${filteredOrders.length} pedidos filtrados manualmente`);
+              orderData = { data: filteredOrders };
+              ordersFound = true;
+            } else {
+              console.log(`Encontrados ${dataAll.data.length} pedidos sin filtrar pero ninguno pertenece al usuario actual`);
+            }
+          } else {
+            console.log('No se encontraron pedidos en la tienda');
+          }
+        } catch (err) {
+          console.error('Error al buscar todos los pedidos:', err);
+        }
+      }
+      
+      // Si no encontramos pedidos, usamos datos de ejemplo
+      if (!orderData || !orderData.data || orderData.data.length === 0) {
+        console.log('No se encontraron pedidos reales, usando datos de ejemplo');
+        return this.getMockOrders();
+      }
+      
+      console.log('Procesando datos de pedidos encontrados...');
       
       // Transformar datos a nuestro formato
-      const orders = data.data.map(async (order: any) => {
+      const orders = orderData.data.map(async (order: any) => {
         // Obtener los items del pedido
         let orderItems = [];
         
@@ -105,15 +174,38 @@ export class OrderService {
           
           const itemsData = await itemsResponse.json();
           
-          if (itemsData.data && itemsData.data.length > 0) {
-            orderItems = itemsData.data.map((item: any) => ({
-              id: item.id,
-              productName: item.attributes.productName,
-              price: item.attributes.price,
-              quantity: item.attributes.quantity,
-              slug: item.attributes.slug || '',
-              imageUrl: item.attributes.imageUrl || undefined
-            }));
+          if (itemsData.data) {
+            // Procesamos cada item del pedido con sus imágenes
+            orderItems = order.attributes.items?.map((item: any) => {
+              // Intentamos obtener la url de la imagen de diferentes formas
+              let imageUrl;
+              
+              // Si ya viene una imagen_url completa
+              if (item.image_url && (item.image_url.startsWith('http') || item.image_url.startsWith('/'))) {
+                imageUrl = item.image_url;
+              } 
+              // Si hay referencia a un producto con imágenes
+              else if (item.product && item.product.data && item.product.data.attributes.images.data) {
+                const images = item.product.data.attributes.images.data;
+                if (images && images.length > 0) {
+                  const image = images[0].attributes;
+                  if (image.formats && image.formats.thumbnail) {
+                    imageUrl = `${API_URL}${image.formats.thumbnail.url}`;
+                  } else if (image.url) {
+                    imageUrl = `${API_URL}${image.url}`;
+                  }
+                }
+              }
+
+              return {
+                id: item.id || `item-${Math.random().toString(36).substr(2, 9)}`,
+                productName: item.product_name || 'Producto sin nombre',
+                price: parseFloat(item.price) || 0,
+                quantity: parseInt(item.quantity) || 1,
+                imageUrl: imageUrl || '/placeholder.svg',
+                slug: item.slug || '',
+              };
+            }) || [];
           }
         } catch (err) {
           console.error('Error al obtener items del pedido:', err);
@@ -239,7 +331,7 @@ export class OrderService {
             productName: 'Impresora 3D Anycubic Photon Mono X 6K',
             price: 259.99,
             quantity: 1,
-            imageUrl: '/placeholder.jpg',
+            imageUrl: '/placeholder.svg',
             slug: 'anycubic-photon-mono-x-6k'
           },
           {
@@ -247,7 +339,7 @@ export class OrderService {
             productName: 'Resina UV 500ml - Gris',
             price: 20.00,
             quantity: 2,
-            imageUrl: '/placeholder.jpg',
+            imageUrl: '/placeholder.svg',
             slug: 'resina-uv-500ml-gris'
           }
         ],
@@ -270,7 +362,7 @@ export class OrderService {
             productName: 'Kit de reparación para impresoras 3D',
             price: 45.50,
             quantity: 1,
-            imageUrl: '/placeholder.jpg',
+            imageUrl: '/placeholder.svg',
             slug: 'kit-reparacion-impresoras-3d'
           },
           {
@@ -278,7 +370,7 @@ export class OrderService {
             productName: 'Filamento PLA 1.75mm - Negro',
             price: 35.00,
             quantity: 3,
-            imageUrl: '/placeholder.jpg',
+            imageUrl: '/placeholder.svg',
             slug: 'filamento-pla-175mm-negro'
           }
         ],
