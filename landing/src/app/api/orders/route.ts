@@ -4,15 +4,15 @@ import { cookies, headers } from 'next/headers';
 // URL base para la API
 const API_URL = process.env.NEXT_PUBLIC_STRAPI_API_URL || 'http://localhost:1337';
 
-// Función para convertir un cart (carrito) al formato order (pedido) para mantener compatibilidad
+// función para transformar un carrito a pedido para que lo vea el usuario
 function cartToOrder(cart: any) {
   try {
     console.log('Convirtiendo carrito a pedido:', cart.id || cart.documentId || 'desconocido');
     
-    // Determinar si estamos trabajando con el formato directo o con attributes
+    // ver si es un carrito normal o con attributes
     const useDirectFormat = cart.createAt !== undefined || !cart.attributes;
     
-    // Extraer datos del carrito (manejando ambos formatos)
+    // sacar datos del carrito
     const cartId = useDirectFormat ? cart.cartId : cart.attributes?.cartId || '';
     const createdAt = useDirectFormat ? cart.time : (cart.attributes?.time || cart.attributes?.createdAt || new Date().toISOString());
     const total = useDirectFormat ? cart.price : (cart.attributes?.price || 0);
@@ -263,55 +263,55 @@ async function trySecondStrategy(userId: string, requestOptions: RequestInit) {
   }
 }
 
-// Tercera estrategia: obtener todos los carritos completados y filtrarlos
+// ultimo intento: coger todos los carritos y filtrarlos
 async function tryThirdStrategy(userId: string, requestOptions: RequestInit) {
   try {
-    // Intentar obtener todos los carritos completados
+    // pillar los carritos
     const url = `${API_URL}/api/carts`;
-    console.log('API - Estrategia 3, buscando todos los carritos con:', url);
+    console.log('API - Estrategia 3, buscando carritos en:', url);
     
     const response = await fetch(url, requestOptions);
     if (!response.ok) {
-      console.error(`API - Error en la respuesta: ${response.status} ${response.statusText}`);
+      console.error(`API - Error: ${response.status} ${response.statusText}`);
       return null;
     }
     
     const responseData = await response.json();
-    console.log('API - Respuesta recibida de Strapi:', JSON.stringify({
+    console.log('API - Respuesta de Strapi:', JSON.stringify({
       status: response.status,
       tieneData: responseData?.data ? 'Sí' : 'No'
     }));
     
-    // Mostrar una vista previa del contenido real
+    // imprimir datos para ver qué pasa
     try {
       if (responseData?.data) {
         const previewData = JSON.parse(JSON.stringify(responseData.data));
         if (Array.isArray(previewData) && previewData.length > 0) {
-          console.log(`API - Vista previa: Encontrados ${previewData.length} elementos. Primer elemento:`, 
+          console.log(`API - Hay ${previewData.length} elementos. El primero:`, 
             JSON.stringify(previewData[0], null, 2));
         } else {
-          console.log('API - Vista previa: No hay elementos en el array o no es un array');
+          console.log('API - No hay nada o no es array :(');
         }
       }
     } catch (e) {
-      console.log('API - Error al imprimir vista previa:', e);
+      console.log('API - Error al imprimir:', e);
     }
     
-    // Verificar si hay datos en la respuesta
+    // ver si hay algo
     if (!responseData || !responseData.data) {
-      console.log('API - No hay datos en la respuesta de Strapi');
+      console.log('API - No hay nada en Strapi');
       return null;
     }
     
-    // Obtener los carritos
+    // pillamos los carritos
     const carts = Array.isArray(responseData.data) ? responseData.data : [];
     console.log(`API - Encontrados ${carts.length} carritos en total`);
     
     if (carts.length === 0) {
-      return null;
+      return null; // no hay nada
     }
     
-    // Filtrar carritos completados
+    // filtramos solo los completados
     const completedCarts = carts.filter((cart: any) => {
       return cart.createAt === 'Pedido completado';
     });
@@ -319,17 +319,17 @@ async function tryThirdStrategy(userId: string, requestOptions: RequestInit) {
     console.log(`API - Hay ${completedCarts.length} carritos completados`);
     
     if (completedCarts.length === 0) {
-      return null;
+      return null; // no encontramos completados
     }
     
-    // Filtrar por usuario
+    // filtramos solo los del usuario
     const userCarts = completedCarts.filter((cart: any) => {
-      // Verificar si el cart pertenece al usuario actual
+      // si tiene usuario en createBy
       if (cart.createBy && cart.createBy.includes(`Usuario ${userId}`)) {
         return true;
       }
       
-      // Verificar otras relaciones posibles
+      // o si está en el campo de usuario
       if (cart.users_permissions_user === userId) {
         return true;
       }
@@ -340,10 +340,10 @@ async function tryThirdStrategy(userId: string, requestOptions: RequestInit) {
     console.log(`API - Encontrados ${userCarts.length} carritos del usuario ${userId}`);
     
     if (userCarts.length === 0) {
-      return null;
+      return null; // no hay carritos de este usuario
     }
     
-    // Convertir a formato de pedidos
+    // los convertimos para la pantalla
     const orders = {
       data: userCarts.map((cart: any) => {
         return cartToOrder(cart);
