@@ -1,11 +1,28 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import GoogleProvider from 'next-auth/providers/google';
+import GitHubProvider from 'next-auth/providers/github';
 
 // URL base para la API
 const API_URL = process.env.NEXT_PUBLIC_STRAPI_API_URL || 'http://localhost:1337';
 
 export const authOptions: NextAuthOptions = {
   providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+      authorization: {
+        params: {
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code"
+        }
+      }
+    }),
+    GitHubProvider({
+      clientId: process.env.GITHUB_CLIENT_ID || '',
+      clientSecret: process.env.GITHUB_CLIENT_SECRET || ''
+    }),
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
@@ -54,8 +71,9 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     // Guardar información adicional en el token
-    async jwt({ token, user }: { token: any, user: any }) {
-      if (user) {
+    async jwt({ token, user, account }: { token: any, user: any, account: any }) {
+      // Si es un inicio de sesión con credenciales, ya tenemos el JWT
+      if (user && account?.provider === 'credentials') {
         token.user = {
           id: user.id,
           name: user.name,
@@ -63,6 +81,27 @@ export const authOptions: NextAuthOptions = {
         };
         token.jwt = user.jwt;
       }
+      
+      // Si es un inicio de sesión con proveedor social, necesitamos obtener un JWT de Strapi
+      if (user && (account?.provider === 'google' || account?.provider === 'github')) {
+        try {
+          // Conectar con Strapi para obtener un JWT
+          const response = await fetch(`${API_URL}/api/auth/${account.provider}/callback?access_token=${account.access_token}`);
+          const data = await response.json();
+          
+          if (data.jwt) {
+            token.jwt = data.jwt;
+            token.user = {
+              id: data.user.id.toString(),
+              name: data.user.username || user.name,
+              email: data.user.email || user.email,
+            };
+          }
+        } catch (error) {
+          console.error(`Error al autenticar con ${account.provider}:`, error);
+        }
+      }
+      
       return token;
     }
   },

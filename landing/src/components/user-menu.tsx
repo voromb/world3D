@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { User, LogOut, Heart, Settings, ChevronDown, LayoutDashboard, ShoppingBag } from 'lucide-react';
 import { getGravatarUrl } from '@/utils/gravatar';
+import { useAuthStore } from '@/lib/store/auth-store';
 
 
 // Props para el componente UserMenu
@@ -17,28 +18,29 @@ interface UserMenuProps {
 // Componente para mostrar el menú de usuario con avatar
 export default function UserMenu({ router }: UserMenuProps) {
   const { data: session, status } = useSession();
+  const { user, isAuthenticated, isLoading, logout } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   
   // esto es para poner el avatar
   useEffect(() => {
-    if (status === 'authenticated' && session?.user) {
+    if (isAuthenticated && user?.email) {
       // coger el email
-      const email = session.user.email || '';
+      const email = user.email || '';
       // lo pongo de 50px porq asi queda bien en el menu
       setAvatarUrl(getGravatarUrl(email, 50, 'identicon'));
     }
-  }, [session, status]);
+  }, [user, isAuthenticated]);
   
   // Si está cargando, mostrar un placeholder
-  if (status === 'loading') {
+  if (isLoading) {
     return (
       <div className="h-8 w-8 rounded-full bg-gray-200 animate-pulse"></div>
     );
   }
   
   // Si no está autenticado, mostrar enlace de inicio de sesión
-  if (status === 'unauthenticated') {
+  if (!isAuthenticated) {
     return (
       <Link href="/auth/login">
         <User strokeWidth="1" className="cursor-pointer" />
@@ -66,7 +68,7 @@ export default function UserMenu({ router }: UserMenuProps) {
         ) : (
           <div className="h-8 w-8 flex items-center justify-center rounded-full bg-blue-50 text-blue-700">
             <span className="text-xs font-semibold">
-              {session?.user?.name?.charAt(0).toUpperCase() || 'U'}
+              {user?.name?.charAt(0).toUpperCase() || 'U'}
             </span>
           </div>
         )}
@@ -79,7 +81,7 @@ export default function UserMenu({ router }: UserMenuProps) {
           onMouseLeave={() => setMenuOpen(false)}
         >
           <div className="px-4 py-2 text-xs text-gray-500 border-b">
-            {session?.user?.email}
+            {user?.email}
           </div>
 
           <Link 
@@ -119,7 +121,7 @@ export default function UserMenu({ router }: UserMenuProps) {
           </Link>
 
           <button
-            onClick={() => signOut({ callbackUrl: '/' })}
+            onClick={() => logout()}
             className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100 flex items-center"
           >
             <LogOut size={16} className="mr-2" />

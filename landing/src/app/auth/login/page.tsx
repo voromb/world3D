@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { signIn } from 'next-auth/react';
 import Link from 'next/link';
+import { useAuthStore } from '@/lib/store/auth-store';
 
 export default function LoginPage() {
   const router = useRouter();
+  const login = useAuthStore(state => state.login);
+  
   const [formData, setFormData] = useState({
     identifier: '',
     password: ''
@@ -28,13 +30,12 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const result = await signIn('credentials', {
-        redirect: false,
+      const success = await login({
         identifier: formData.identifier,
         password: formData.password
       });
 
-      if (result?.error) {
+      if (!success) {
         setError('Credenciales incorrectas o cuenta no confirmada');
       } else {
         // Redireccionar al usuario a la página principal o a la que estaba intentando acceder
@@ -74,7 +75,7 @@ export default function LoginPage() {
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="identifier" className="block text-sm font-medium text-gray-700">
-                Email o nombre de usuario
+                Usuario o Email
               </label>
               <div className="mt-1">
                 <input
